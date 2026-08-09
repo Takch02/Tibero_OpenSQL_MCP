@@ -98,7 +98,7 @@ public class IngestionService {
       String title,
       String content,
       String category) {
-    Document document = findLockedDocument(documentId, ownerId);
+    Document document = findLockedActiveDocument(documentId, ownerId);
     validateExpectedVersion(document, expectedVersion);
 
     String contentHash = sha256(content);
@@ -133,7 +133,7 @@ public class IngestionService {
 
   @Transactional
   public void delete(Long documentId, String ownerId, Integer expectedVersion) {
-    Document document = findLockedDocument(documentId, ownerId);
+    Document document = findLockedActiveDocument(documentId, ownerId);
     validateExpectedVersion(document, expectedVersion);
     document.markDeleted();
     ingestionLogRepository.save(
@@ -177,8 +177,14 @@ public class IngestionService {
     return document;
   }
 
-  // 비관락 이용
   private Document findLockedDocument(Long documentId, String ownerId) {
+    return documentRepository
+        .findLockedByIdAndOwnerId(documentId, ownerId)
+        .orElseThrow(() -> new DocumentNotFoundException(documentId));
+  }
+
+  // 수정·삭제는 이미 삭제된 문서를 대상으로 실행할 수 없다.
+  private Document findLockedActiveDocument(Long documentId, String ownerId) {
     return documentRepository
         .findLockedByIdAndOwnerId(documentId, ownerId)
         .filter(document -> document.getDeletedAt() == null)
