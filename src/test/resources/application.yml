@@ -2,7 +2,32 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
+  flyway:
+    enabled: true
+  ai:
+    embedding:
+      transformer:
+        onnx:
+          model-uri: https://media.githubusercontent.com/media/spring-projects/spring-ai/refs/tags/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/model.onnx
+          model-output-name: last_hidden_state
+        tokenizer:
+          uri: https://raw.githubusercontent.com/spring-projects/spring-ai/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/tokenizer.json
+    mcp:
+      server:
+        name: tibero-mcp
+        version: 0.0.1
+        protocol: STREAMABLE
+        type: SYNC
+
+app:
+  embedding:
+    dimension: 384
+    worker:
+      # 테스트에서는 자동 폴링을 사실상 끄고(초기 지연을 1시간) 워커를 직접 호출해 결정적으로 검증한다.
+      poll-interval-ms: 3600000
+      initial-delay-ms: 3600000
+      batch-size: 10
+      embed-batch-size: 32
+  chunking:
+    size: 500
+    overlap: 50

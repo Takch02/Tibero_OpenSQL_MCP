@@ -1,3 +1,42 @@
 spring:
   application:
     name: tibero_mcp
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: true
+  ai:
+    embedding:
+      transformer:
+        onnx:
+          # all-MiniLM-L6-v2 (384차원) — spring-ai v2.0.0 태그에 고정, 라이브러리 기본값과 동일 모델
+          model-uri: https://media.githubusercontent.com/media/spring-projects/spring-ai/refs/tags/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/model.onnx
+          model-output-name: last_hidden_state
+        tokenizer:
+          uri: https://raw.githubusercontent.com/spring-projects/spring-ai/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/tokenizer.json
+    mcp:
+      server:
+        name: tibero-mcp
+        version: 0.0.1
+        # Streamable HTTP(MCP 최신 규격) — 레거시 SSE 대신 사용. 엔드포인트 기본값: /mcp
+        protocol: STREAMABLE
+        type: SYNC
+
+app:
+  embedding:
+    dimension: 384
+    worker:
+      # PENDING 문서를 폴링하는 주기(ms)와 한 번에 집어갈 문서 수(Outbox 소비자)
+      poll-interval-ms: 5000
+      initial-delay-ms: 0
+      batch-size: 10
+      # 한 번의 embedAll() 호출에 넣을 청크 수 상한(수백 페이지 문서 대비)
+      embed-batch-size: 32
+  chunking:
+    size: 500
+    overlap: 50

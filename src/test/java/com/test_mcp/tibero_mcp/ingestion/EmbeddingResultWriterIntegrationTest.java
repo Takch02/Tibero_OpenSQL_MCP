@@ -1,6 +1,11 @@
-package com.test_mcp.tibero_mcp;
+package com.test_mcp.tibero_mcp.ingestion;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.test_mcp.tibero_mcp.exception.DocumentNotFoundException;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -11,7 +16,7 @@ import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest
 @Testcontainers
-class TiberoMcpApplicationTests {
+class EmbeddingResultWriterIntegrationTest {
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -25,6 +30,18 @@ class TiberoMcpApplicationTests {
     registry.add("spring.datasource.password", postgres::getPassword);
   }
 
+  @Autowired EmbeddingResultWriter embeddingResultWriter;
+
   @Test
-  void contextLoads() {}
+  void 존재하지_않는_documentId면_DocumentNotFoundException을_던진다() {
+    Long missingId = -1L;
+
+    assertThatThrownBy(
+            () -> embeddingResultWriter.applyEmbeddings(missingId, 1, List.of(), List.of()))
+        .isInstanceOf(DocumentNotFoundException.class)
+        .hasMessageContaining(String.valueOf(missingId));
+
+    assertThatThrownBy(() -> embeddingResultWriter.markFailed(missingId, 1))
+        .isInstanceOf(DocumentNotFoundException.class);
+  }
 }

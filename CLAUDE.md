@@ -1,11 +1,6 @@
 # Tibero MCP - AI 문서 관리 플랫폼
 
-> **Claude Code 진입점.** 이 파일은 프로젝트 배경 설명이며, 실제 작업 규칙은 [AGENTS.md](./AGENTS.md)와 `docs/ai/*`(공통 규칙 원본)를 따른다. Claude Code는 이 저장소에서 작업할 때 반드시 아래 문서를 함께 준수한다.
->
-> - [AGENTS.md](./AGENTS.md) — 요약 및 진입점 (Codex 등 다른 에이전트와 공통)
-> - [docs/ai/engineering-standards.md](./docs/ai/engineering-standards.md) — 코드/DTO/API/계층 규칙
-> - [docs/ai/testing-standards.md](./docs/ai/testing-standards.md) — 테스트 규칙
-> - [docs/ai/workflow.md](./docs/ai/workflow.md) — 작업 절차, 빌드/테스트 필수 실행 규칙
+> **Claude Code 진입점.** 작업 규칙은 [AGENTS.md](./AGENTS.md)와 `docs/ai/*`(engineering-standards, testing-standards, workflow — 공통 규칙 원본)를 따른다.
 
 ## 프로젝트 개요
 

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "ko-KR"
+
+reviews:
+  profile: "assertive"
+  high_level_summary: true
+  poem: false
+  # 초안 PR의 자동 리뷰 건너뜀 안내 댓글은 남기지 않는다.
+  review_status: false
+  auto_review:
+    enabled: true
+    drafts: false
+
+chat:
+  auto_reply: true
