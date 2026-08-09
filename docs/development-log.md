@@ -1,0 +1,54 @@
+# 개발 내역
+
+## 2026-08-09 — 문서 버전 생명주기
+
+### 목표
+
+문서가 수정·삭제되어도 과거 원문과 벡터 이력을 보존하고, 새 버전의 임베딩이 끝날 때까지 마지막 정상 버전만 검색에 노출한다.
+
+### 구현
+
+- Flyway V3 마이그레이션 추가
+  - `document_versions` 테이블로 버전별 원문·해시·처리 상태·작성자 보존
+  - `documents.current_search_version`으로 현재 검색에 노출할 마지막 정상 버전 관리
+  - `documents.deleted_at`을 이용한 논리 삭제
+  - `ingestion_log.document_version`으로 이벤트와 문서 버전 연결
+  - V3 적용 전 문서를 `document_versions`의 초기 이력으로 backfill
+- 문서 API 확장
+  - `GET /api/documents/{documentId}`: 현재 문서 상태 조회
+  - `GET /api/documents/{documentId}/versions`: 과거 버전 이력 조회
+  - `PUT /api/documents/{documentId}`: 새 버전 업로드
+  - `DELETE /api/documents/{documentId}`: 논리 삭제
+  - `POST /api/documents/{documentId}/versions/{version}/restore`: 과거 원문으로 복원
+- 수정·삭제·복원 요청에 `expectedVersion`을 추가해 오래된 화면/요청으로 인한 덮어쓰기를 409으로 차단
+- 임베딩 워커가 특정 `document_version`의 미처리 청크만 처리하도록 변경
+- 임베딩 반영 시 해당 버전 이력을 `EMBEDDED`/`FAILED`로 전이하고, 최신 작성 버전과 같을 때만 `current_search_version`을 교체
+- 전역 `content_hash` 중복 제거를 폐기하고 `idempotency_key`만 생성 재시도 기준으로 사용
+  - 서로 다른 소유자의 동일 본문이 하나의 문서로 합쳐지는 권한 경계 문제를 제거
+
+### 상태 전이
+
+```text
+최초 생성: v1 PENDING
+  → 임베딩 완료: v1 EMBEDDED, current_search_version=1
+
+수정: v2 PENDING, current_search_version=1 유지
+  → 임베딩 완료: v2 EMBEDDED, current_search_version=2
+  → 임베딩 실패: v2 FAILED, current_search_version=1 유지
+
+삭제: 문서 DELETED, 검색/일반 조회에서 제외
+복원: 과거 원문을 새 버전(v3 등)으로 복제 후 PENDING
+```
+
+### 검증
+
+- `./gradlew test` 통과 (Testcontainers + pgvector)
+- `./gradlew build` 통과 (Spotless 포함)
+- 실제 OpenSQL에서 Flyway V3 적용 성공
+- 실제 REST 호출로 `v1 생성 → v2 수정 → 버전 이력 조회 → 논리 삭제 → v1 기반 v3 복원` 확인
+
+### 다음 작업
+
+- 워커 이벤트 점유(`PROCESSING`)와 `FOR UPDATE SKIP LOCKED`
+- 재시도 횟수·실패 원인·처리 기한 관리
+- 재기동 시 미완료 이벤트 회수

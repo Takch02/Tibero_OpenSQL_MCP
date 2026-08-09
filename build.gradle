@@ -19,16 +19,37 @@ repositories {
     mavenCentral()
 }
 
+ext {
+    springAiVersion = '2.0.0'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+    }
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5'
+
+    // 로컬 ONNX 모델(all-MiniLM-L6-v2)로 임베딩 — 외부 API 키 불필요
+    implementation 'org.springframework.ai:spring-ai-starter-model-transformers'
+
+    // MCP 서버(Streamable HTTP) — SearchService를 MCP 도구로 노출
+    implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
+
+    // 스키마 버전 관리 (CREATE EXTENSION vector 포함) — Spring Boot 4의 Flyway 오토컨피그 스타터
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
 
     runtimeOnly 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation platform('org.testcontainers:testcontainers-bom:1.20.4')
     testImplementation 'org.testcontainers:junit-jupiter'
