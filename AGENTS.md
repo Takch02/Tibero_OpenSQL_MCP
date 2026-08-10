@@ -5,6 +5,7 @@
 - [docs/ai/engineering-standards.md](./docs/ai/engineering-standards.md) — 코드/DTO/API/계층
 - [docs/ai/testing-standards.md](./docs/ai/testing-standards.md) — 테스트
 - [docs/ai/workflow.md](./docs/ai/workflow.md) — 절차/명령어/커밋 규칙
+- [docs/ai/commit-harness.md](./docs/ai/commit-harness.md) — 커밋 분리·스테이징 점검
 
 ## 프로젝트
 
