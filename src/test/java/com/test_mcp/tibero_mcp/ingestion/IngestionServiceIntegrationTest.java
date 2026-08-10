@@ -11,15 +11,19 @@ import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentVersion;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentVersionRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionLogRepository;
+import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +57,10 @@ class IngestionServiceIntegrationTest {
 
   @Autowired IngestionLogRepository ingestionLogRepository;
 
+  @Autowired IngestionTaskRepository ingestionTaskRepository;
+
+  @Autowired IngestionTaskClaimer ingestionTaskClaimer;
+
   @Autowired DocumentVersionRepository documentVersionRepository;
 
   @Test
@@ -78,6 +86,18 @@ class IngestionServiceIntegrationTest {
     assertThat(logs.get(0).getEvent()).isEqualTo(IngestionEvent.CREATED);
     assertThat(logs.get(0).getStatus()).isEqualTo(DocumentStatus.PENDING);
     assertThat(logs.get(0).getDocumentVersion()).isEqualTo(1);
+  }
+
+  @Test
+  void 존재하지_않는_문서_버전의_작업은_저장할_수_없다() {
+    Document uploaded =
+        ingestionService.upload("invalid-version-key", "제목", "처리할 내용", "user-1", null);
+
+    assertThatThrownBy(
+            () ->
+                ingestionTaskRepository.saveAndFlush(
+                    new IngestionTask(uploaded.getId(), uploaded.getVersion() + 1)))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -191,5 +211,28 @@ class IngestionServiceIntegrationTest {
             IngestionEvent.UPDATED,
             IngestionEvent.DELETED,
             IngestionEvent.RESTORED);
+
+    assertThat(
+            ingestionTaskRepository
+                .findByDocumentIdAndDocumentVersion(restored.getId(), restored.getVersion())
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(IngestionTaskStatus.PENDING);
+
+    List<IngestionTaskClaim> claims = ingestionTaskClaimer.claimPendingTasks(1);
+
+    assertThat(claims)
+        .singleElement()
+        .satisfies(
+            claim -> {
+              assertThat(claim.documentId()).isEqualTo(restored.getId());
+              assertThat(claim.documentVersion()).isEqualTo(restored.getVersion());
+            });
+    assertThat(
+            ingestionTaskRepository
+                .findByDocumentIdAndDocumentVersion(restored.getId(), restored.getVersion())
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(IngestionTaskStatus.PROCESSING);
   }
 }
