@@ -9,10 +9,12 @@ import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentVersion;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkBatchWriter;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentVersionRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionLogRepository;
+import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -31,6 +33,7 @@ public class IngestionService {
   private final DocumentVersionRepository documentVersionRepository;
   private final DocumentChunkBatchWriter documentChunkBatchWriter;
   private final IngestionLogRepository ingestionLogRepository;
+  private final IngestionTaskRepository ingestionTaskRepository;
   private final Chunker chunker;
 
   // 임베딩(모델 추론)은 여기서 하지 않는다. 느린 작업을 트랜잭션 안에 넣으면 트랜잭션이 오래 열려
@@ -65,12 +68,16 @@ public class IngestionService {
     List<String> chunks = chunker.chunk(content);
     documentChunkBatchWriter.insertAll(document.getId(), document.getVersion(), chunks);
 
+    // 과거 이력을 저장함
     ingestionLogRepository.save(
         new IngestionLog(
             document.getId(),
             document.getVersion(),
             IngestionEvent.CREATED,
             DocumentStatus.PENDING));
+
+    // 지금 워커가 처리할 일을 저장(outbox)
+    ingestionTaskRepository.save(new IngestionTask(document.getId(), document.getVersion()));
 
     return document;
   }
@@ -128,6 +135,9 @@ public class IngestionService {
             document.getVersion(),
             IngestionEvent.UPDATED,
             DocumentStatus.PENDING));
+
+    // outbox
+    ingestionTaskRepository.save(new IngestionTask(document.getId(), document.getVersion()));
     return document;
   }
 
@@ -174,6 +184,9 @@ public class IngestionService {
             document.getVersion(),
             IngestionEvent.RESTORED,
             DocumentStatus.PENDING));
+
+    // outbox
+    ingestionTaskRepository.save(new IngestionTask(document.getId(), document.getVersion()));
     return document;
   }
 

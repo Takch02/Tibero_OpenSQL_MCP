@@ -1,0 +1,144 @@
+package com.test_mcp.tibero_mcp.ingestion;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.test_mcp.tibero_mcp.ingestion.entity.Document;
+import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
+import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
+import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+@SpringBootTest
+@Testcontainers
+class IngestionTaskClaimerIntegrationTest {
+
+  @Container
+  static PostgreSQLContainer<?> postgres =
+      new PostgreSQLContainer<>(
+          DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
+
+  @DynamicPropertySource
+  static void configureProperties(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.url", postgres::getJdbcUrl);
+    registry.add("spring.datasource.username", postgres::getUsername);
+    registry.add("spring.datasource.password", postgres::getPassword);
+  }
+
+  @Autowired IngestionService ingestionService;
+
+  @Autowired IngestionTaskClaimer ingestionTaskClaimer;
+
+  @Autowired IngestionTaskRepository ingestionTaskRepository;
+
+  @Autowired DocumentRepository documentRepository;
+
+  @Autowired EmbeddingResultWriter embeddingResultWriter;
+
+  @Autowired JdbcTemplate jdbcTemplate;
+
+  @Autowired PlatformTransactionManager transactionManager;
+
+  @Test
+  void 잠긴_PENDING_작업은_다른_워커가_대기하지_않고_건너뛴다() throws Exception {
+    Document uploaded = ingestionService.upload("claim-key", "제목", "처리할 내용", "user-1", null);
+    CountDownLatch lockAcquired = new CountDownLatch(1);
+    CountDownLatch releaseLock = new CountDownLatch(1);
+    ExecutorService workers = Executors.newFixedThreadPool(2);
+
+    try {
+      Future<?> lockHolder =
+          workers.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            List<IngestionTask> lockedTasks =
+                                ingestionTaskRepository.findPendingForUpdateSkipLocked(1);
+                            assertThat(lockedTasks).singleElement();
+                            lockAcquired.countDown();
+                            await(releaseLock);
+                          }));
+
+      assertThat(lockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<List<IngestionTaskClaim>> claimAttempt =
+          workers.submit(() -> ingestionTaskClaimer.claimPendingTasks(1));
+
+      assertThat(claimAttempt.get(1, TimeUnit.SECONDS)).isEmpty();
+      releaseLock.countDown();
+      lockHolder.get(5, TimeUnit.SECONDS);
+
+      assertThat(ingestionTaskClaimer.claimPendingTasks(1))
+          .singleElement()
+          .satisfies(
+              claim -> {
+                assertThat(claim.documentId()).isEqualTo(uploaded.getId());
+                assertThat(claim.documentVersion()).isEqualTo(uploaded.getVersion());
+              });
+      assertThat(
+              ingestionTaskRepository
+                  .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
+                  .orElseThrow()
+                  .getStatus())
+          .isEqualTo(IngestionTaskStatus.PROCESSING);
+    } finally {
+      releaseLock.countDown();
+      workers.shutdownNow();
+    }
+  }
+
+  @Test
+  void FAILED_문서의_PENDING_재시도_작업을_claim한다() {
+    Document uploaded = ingestionService.upload("failed-retry-key", "제목", "처리할 내용", "user-1", null);
+    IngestionTask task =
+        ingestionTaskRepository
+            .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
+            .orElseThrow();
+    embeddingResultWriter.markFailed(task.getId(), uploaded.getId(), uploaded.getVersion());
+
+    // 재시도 정책이 FAILED 작업을 다시 PENDING으로 전이한 상태를 재현한다.
+    assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+        .isEqualTo(IngestionTaskStatus.FAILED);
+    jdbcTemplate.update("UPDATE ingestion_tasks SET status = 'PENDING' WHERE id = ?", task.getId());
+
+    assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
+        .isEqualTo(DocumentStatus.FAILED);
+    assertThat(ingestionTaskClaimer.claimPendingTasks(1))
+        .singleElement()
+        .satisfies(
+            claim -> {
+              assertThat(claim.documentId()).isEqualTo(uploaded.getId());
+              assertThat(claim.documentVersion()).isEqualTo(uploaded.getVersion());
+            });
+    assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+        .isEqualTo(IngestionTaskStatus.PROCESSING);
+  }
+
+  private void await(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("작업 잠금 대기 중 인터럽트되었습니다.", e);
+    }
+  }
+}

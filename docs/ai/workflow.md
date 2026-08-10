@@ -14,6 +14,7 @@
 - 커밋 메시지: `<type>: <한국어 설명>` (`feat`/`fix`/`test` 등). 예: `feat: 문서 업로드 API 추가`
 - 이슈/PR 제목: `[FEAT]`, `[FIX]` 등 대괄호 태그로 시작.
 - 커밋은 사용자가 명시적으로 요청했을 때만 생성.
+- 커밋 분리·명시적 스테이징은 [commit-harness.md](./commit-harness.md)를 따른다.
 
 ## 명령어
 

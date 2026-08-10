@@ -10,9 +10,11 @@ import com.test_mcp.tibero_mcp.ingestion.entity.DocumentChunk;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionLogRepository;
+import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +57,8 @@ class EmbeddingWorkerFailureIntegrationTest {
 
   @Autowired IngestionLogRepository ingestionLogRepository;
 
+  @Autowired IngestionTaskRepository ingestionTaskRepository;
+
   @Test
   void 임베딩_추론이_실패하면_FAILED로_전이되고_청크는_NULL로_남는다() {
     // given: 업로드는 정상(추론 없음)
@@ -77,5 +81,11 @@ class EmbeddingWorkerFailureIntegrationTest {
     assertThat(logs)
         .extracting(IngestionLog::getEvent)
         .containsExactlyInAnyOrder(IngestionEvent.CREATED, IngestionEvent.FAILED);
+    assertThat(
+            ingestionTaskRepository
+                .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(IngestionTaskStatus.FAILED);
   }
 }
