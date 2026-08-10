@@ -37,11 +37,11 @@ class EmbeddingResultWriterIntegrationTest {
     Long missingId = -1L;
 
     assertThatThrownBy(
-            () -> embeddingResultWriter.applyEmbeddings(missingId, 1, List.of(), List.of()))
+            () -> embeddingResultWriter.applyEmbeddings(-1L, missingId, 1, List.of(), List.of()))
         .isInstanceOf(DocumentNotFoundException.class)
         .hasMessageContaining(String.valueOf(missingId));
 
-    assertThatThrownBy(() -> embeddingResultWriter.markFailed(missingId, 1))
+    assertThatThrownBy(() -> embeddingResultWriter.markFailed(-1L, missingId, 1))
         .isInstanceOf(DocumentNotFoundException.class);
   }
 }

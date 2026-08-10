@@ -1,18 +1,14 @@
 package com.test_mcp.tibero_mcp.ingestion;
 
 import com.test_mcp.tibero_mcp.embedding.EmbeddingService;
-import com.test_mcp.tibero_mcp.ingestion.entity.Document;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentChunk;
-import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
-import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Limit;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -24,10 +20,10 @@ public class EmbeddingWorker {
 
   private static final Logger log = LoggerFactory.getLogger(EmbeddingWorker.class);
 
-  private final DocumentRepository documentRepository;
   private final DocumentChunkRepository documentChunkRepository;
   private final EmbeddingService embeddingService;
   private final EmbeddingResultWriter embeddingResultWriter;
+  private final IngestionTaskClaimer ingestionTaskClaimer;
 
   @Value("${app.embedding.worker.batch-size}")
   private int batchSize;
@@ -37,27 +33,27 @@ public class EmbeddingWorker {
   @Value("${app.embedding.worker.embed-batch-size}")
   private int embedBatchSize;
 
+  /** IngestionTask(outbox)를 조회하여 비동기로 임베딩 실시 */
   @Scheduled(
       fixedDelayString = "${app.embedding.worker.poll-interval-ms}",
       initialDelayString = "${app.embedding.worker.initial-delay-ms}")
   public void pollAndProcess() {
-    List<Document> pending =
-        documentRepository.findByStatusOrderByIdAsc(DocumentStatus.PENDING, Limit.of(batchSize));
-    for (Document document : pending) {
-      process(document);
+    List<IngestionTaskClaim> claimedTasks = ingestionTaskClaimer.claimPendingTasks(batchSize);
+    for (IngestionTaskClaim task : claimedTasks) {
+      process(task);
     }
   }
 
   // 문서 하나를 처리한다. 추론(느림)은 여기서 트랜잭션 없이 수행하고, DB 반영만 별도 트랜잭션 빈에 위임한다.
-  void process(Document document) {
+  void process(IngestionTaskClaim task) {
     List<DocumentChunk> chunks =
         documentChunkRepository
             .findByDocumentIdAndDocumentVersionAndEmbeddingIsNullOrderByChunkIndexAsc(
-                document.getId(), document.getVersion());
+                task.documentId(), task.documentVersion());
     if (chunks.isEmpty()) {
       // 이미 다 임베딩된 문서 — 상태만 정리한다.
       embeddingResultWriter.applyEmbeddings(
-          document.getId(), document.getVersion(), List.of(), List.of());
+          task.taskId(), task.documentId(), task.documentVersion(), List.of(), List.of());
       return;
     }
 
@@ -70,11 +66,11 @@ public class EmbeddingWorker {
           vectors.stream().map(embeddingService::toVectorLiteral).toList();
 
       embeddingResultWriter.applyEmbeddings(
-          document.getId(), document.getVersion(), chunkIds, vectorLiterals);
+          task.taskId(), task.documentId(), task.documentVersion(), chunkIds, vectorLiterals);
     } catch (RuntimeException e) {
       // 모델 오류 등 — FAILED로 기록하고 이력을 남긴다. embedding=NULL이 유지되므로 재처리 여지가 있다.
-      log.warn("문서 임베딩 실패 (documentId={})", document.getId(), e);
-      embeddingResultWriter.markFailed(document.getId(), document.getVersion());
+      log.warn("문서 임베딩 실패 (documentId={})", task.documentId(), e);
+      embeddingResultWriter.markFailed(task.taskId(), task.documentId(), task.documentVersion());
     }
   }
 
