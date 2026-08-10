@@ -67,4 +67,6 @@
 
 ### 검증
 
-- 두 워커가 동시에 claim해도 한 작업만 `PROCESSING`으로 전이되는 Testcontainers 통합 테스트 추가
+- `./gradlew test --rerun-tasks` 성공 — 32개 테스트, 실패·오류 0건
+- `./gradlew build` 성공 — Spotless 검사와 전체 테스트 포함
+- 잠긴 `PENDING` 작업을 다른 워커가 즉시 건너뛰는 Testcontainers 통합 테스트 추가

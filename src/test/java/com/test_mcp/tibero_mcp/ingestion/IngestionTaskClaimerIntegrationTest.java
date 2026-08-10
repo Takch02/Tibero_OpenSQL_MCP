@@ -3,9 +3,9 @@ package com.test_mcp.tibero_mcp.ingestion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.test_mcp.tibero_mcp.ingestion.entity.Document;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -17,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -44,25 +46,45 @@ class IngestionTaskClaimerIntegrationTest {
 
   @Autowired IngestionTaskRepository ingestionTaskRepository;
 
+  @Autowired PlatformTransactionManager transactionManager;
+
   @Test
-  void 두_워커가_동시에_claim하면_하나만_PROCESSING으로_전이된다() throws Exception {
+  void 잠긴_PENDING_작업은_다른_워커가_대기하지_않고_건너뛴다() throws Exception {
     Document uploaded = ingestionService.upload("claim-key", "제목", "처리할 내용", "user-1", null);
-    CountDownLatch ready = new CountDownLatch(2);
-    CountDownLatch start = new CountDownLatch(1);
+    CountDownLatch lockAcquired = new CountDownLatch(1);
+    CountDownLatch releaseLock = new CountDownLatch(1);
     ExecutorService workers = Executors.newFixedThreadPool(2);
 
     try {
-      Future<List<IngestionTaskClaim>> first = workers.submit(() -> claimAfterStart(ready, start));
-      Future<List<IngestionTaskClaim>> second = workers.submit(() -> claimAfterStart(ready, start));
+      Future<?> lockHolder =
+          workers.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            List<IngestionTask> lockedTasks =
+                                ingestionTaskRepository.findPendingForUpdateSkipLocked(1);
+                            assertThat(lockedTasks).singleElement();
+                            lockAcquired.countDown();
+                            await(releaseLock);
+                          }));
 
-      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-      start.countDown();
+      assertThat(lockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
 
-      List<IngestionTaskClaim> claims = new ArrayList<>(first.get(5, TimeUnit.SECONDS));
-      claims.addAll(second.get(5, TimeUnit.SECONDS));
+      Future<List<IngestionTaskClaim>> claimAttempt =
+          workers.submit(() -> ingestionTaskClaimer.claimPendingTasks(1));
 
-      assertThat(claims).hasSize(1);
-      assertThat(claims.getFirst().documentId()).isEqualTo(uploaded.getId());
+      assertThat(claimAttempt.get(1, TimeUnit.SECONDS)).isEmpty();
+      releaseLock.countDown();
+      lockHolder.get(5, TimeUnit.SECONDS);
+
+      assertThat(ingestionTaskClaimer.claimPendingTasks(1))
+          .singleElement()
+          .satisfies(
+              claim -> {
+                assertThat(claim.documentId()).isEqualTo(uploaded.getId());
+                assertThat(claim.documentVersion()).isEqualTo(uploaded.getVersion());
+              });
       assertThat(
               ingestionTaskRepository
                   .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
@@ -70,14 +92,17 @@ class IngestionTaskClaimerIntegrationTest {
                   .getStatus())
           .isEqualTo(IngestionTaskStatus.PROCESSING);
     } finally {
+      releaseLock.countDown();
       workers.shutdownNow();
     }
   }
 
-  private List<IngestionTaskClaim> claimAfterStart(CountDownLatch ready, CountDownLatch start)
-      throws InterruptedException {
-    ready.countDown();
-    start.await();
-    return ingestionTaskClaimer.claimPendingTasks(1);
+  private void await(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("작업 잠금 대기 중 인터럽트되었습니다.", e);
+    }
   }
 }
