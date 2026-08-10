@@ -85,3 +85,17 @@ v2 임베딩 중에는 v1을 검색하고, v2가 `EMBEDDED`가 된 짧은 트랜
 ### 다음 결정
 
 이벤트별 `PROCESSING` 상태, 재시도 횟수, 처리 기한을 도입하고 `FOR UPDATE SKIP LOCKED`로 한 워커만 이벤트를 점유하게 한다.
+
+## DD-008. 감사 이력과 작업 점유 상태를 분리한다
+
+### 결정
+
+`ingestion_log`는 `CREATED`·`EMBEDDED`·`FAILED` 같은 감사 이력을 유지하고, 워커 점유 상태는 버전당 하나인 `ingestion_tasks` outbox 행에 둔다.
+
+### 이유
+
+감사 로그 행을 `PENDING → PROCESSING → EMBEDDED`로 갱신하면 원래 발생 사실과 처리 상태가 섞인다. 반대로 문서 버전별 작업 행은 `FOR UPDATE SKIP LOCKED`로 짧게 점유·전이하기 적합하다.
+
+### 결과
+
+여러 인스턴스가 동시에 폴링해도 한 트랜잭션만 작업 행을 `PROCESSING`으로 바꾼다. 느린 모델 추론은 점유 트랜잭션이 끝난 뒤 실행하므로 DB 락을 오래 잡지 않는다. 재시도와 lease 회수는 이 작업 상태를 확장하는 다음 단계에서 추가한다.

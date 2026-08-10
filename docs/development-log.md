@@ -49,6 +49,22 @@
 
 ### 다음 작업
 
-- 워커 이벤트 점유(`PROCESSING`)와 `FOR UPDATE SKIP LOCKED`
 - 재시도 횟수·실패 원인·처리 기한 관리
 - 재기동 시 미완료 이벤트 회수
+
+## 2026-08-09 — 다중 워커 작업 점유
+
+### 목표
+
+여러 애플리케이션 인스턴스가 같은 문서 임베딩 작업을 동시에 처리하지 않도록 OpenSQL 행 잠금으로 작업을 점유한다.
+
+### 구현
+
+- `ingestion_tasks` outbox 테이블을 추가하고 문서 버전마다 하나의 처리 작업을 생성
+- `IngestionTaskClaimer`가 `FOR UPDATE SKIP LOCKED`로 `PENDING` 작업을 가져와 `PROCESSING`으로 전이
+- `EmbeddingWorker`는 claim된 작업만 처리하고, 결과 반영 시 작업을 `EMBEDDED` 또는 `FAILED`로 종료
+- 감사 목적의 `ingestion_log`는 변경하지 않고 처리 이력으로 유지
+
+### 검증
+
+- 두 워커가 동시에 claim해도 한 작업만 `PROCESSING`으로 전이되는 Testcontainers 통합 테스트 추가
