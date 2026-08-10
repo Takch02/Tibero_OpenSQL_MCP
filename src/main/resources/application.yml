@@ -23,7 +23,7 @@ spring:
       server:
         name: tibero-mcp
         version: 0.0.1
-        # Streamable HTTP(MCP 최신 규격) — 레거시 SSE 대신 사용. 엔드포인트 기본값: /mcp
+        # Streamable HTTP(MCP 최신 규격) — 엔드포인트 기본값: /mcp
         protocol: STREAMABLE
         type: SYNC
 

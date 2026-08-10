@@ -14,7 +14,7 @@ PR은 변경 파일 수가 아니라 **독립적으로 이해·검증 가능한 
 
 ```bash
 # 전체 작업 트리를 추가하지 않는다. 커밋 단위의 파일만 명시적으로 추가한다.
-git add <files-for-one-commit>
+git add -- path/to/file-one path/to/file-two
 
 # 실제 포함 범위와 공백 오류를 확인한다.
 git diff --cached --check
