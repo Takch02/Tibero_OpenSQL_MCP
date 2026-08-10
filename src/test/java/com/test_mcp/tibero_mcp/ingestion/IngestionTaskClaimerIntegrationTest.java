@@ -3,8 +3,10 @@ package com.test_mcp.tibero_mcp.ingestion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.test_mcp.tibero_mcp.ingestion.entity.Document;
+import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
+import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -15,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -45,6 +48,12 @@ class IngestionTaskClaimerIntegrationTest {
   @Autowired IngestionTaskClaimer ingestionTaskClaimer;
 
   @Autowired IngestionTaskRepository ingestionTaskRepository;
+
+  @Autowired DocumentRepository documentRepository;
+
+  @Autowired EmbeddingResultWriter embeddingResultWriter;
+
+  @Autowired JdbcTemplate jdbcTemplate;
 
   @Autowired PlatformTransactionManager transactionManager;
 
@@ -95,6 +104,33 @@ class IngestionTaskClaimerIntegrationTest {
       releaseLock.countDown();
       workers.shutdownNow();
     }
+  }
+
+  @Test
+  void FAILED_문서의_PENDING_재시도_작업을_claim한다() {
+    Document uploaded = ingestionService.upload("failed-retry-key", "제목", "처리할 내용", "user-1", null);
+    IngestionTask task =
+        ingestionTaskRepository
+            .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
+            .orElseThrow();
+    embeddingResultWriter.markFailed(task.getId(), uploaded.getId(), uploaded.getVersion());
+
+    // 재시도 정책이 FAILED 작업을 다시 PENDING으로 전이한 상태를 재현한다.
+    assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+        .isEqualTo(IngestionTaskStatus.FAILED);
+    jdbcTemplate.update("UPDATE ingestion_tasks SET status = 'PENDING' WHERE id = ?", task.getId());
+
+    assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
+        .isEqualTo(DocumentStatus.FAILED);
+    assertThat(ingestionTaskClaimer.claimPendingTasks(1))
+        .singleElement()
+        .satisfies(
+            claim -> {
+              assertThat(claim.documentId()).isEqualTo(uploaded.getId());
+              assertThat(claim.documentVersion()).isEqualTo(uploaded.getVersion());
+            });
+    assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+        .isEqualTo(IngestionTaskStatus.PROCESSING);
   }
 
   private void await(CountDownLatch latch) {

@@ -13,14 +13,14 @@
 
 `Controller → Service → Repository` 구조를 유지한다.
 
-| 계층 | 책임 |
-| --- | --- |
-| Controller | 요청 검증, DTO 변환, Service 호출, springdoc 문서화 |
-| Service | 유스케이스, 비즈니스 규칙, 트랜잭션 경계 |
-| Repository | 데이터 접근만. 비즈니스 정책·도메인 예외 결정 금지 |
+| 계층 | 책임                                           |
+| --- |----------------------------------------------|
+| Controller | 요청 검증, 요청 DTO 바인딩, Service 호출, springdoc 문서화 |
+| Service | 유스케이스, 비즈니스 규칙, 트랜잭션 경계                      |
+| Repository | 데이터 접근만. 비즈니스 정책·도메인 예외 결정 금지                |
 
 - Entity를 API에 직접 노출하지 않고 DTO를 사용한다.
-- DTO 변환 위치는 Service 또는 Mapper 하나로 통일한다.
+- 도메인 객체와 DTO 변환은 Controller·Service·Mapper 중 한 곳에서 수행하고, 동일 흐름에서 분산하지 않는다.
 - 기존 응답 형식은 요청 없이 바꾸지 않는다.
 - Controller는 `@Tag`, `@Operation`, `@ApiResponse`로 문서화한다.
 - 도메인 예외는 `exception` 패키지에서 `TiberoMcpException`을 상속하고, `GlobalExceptionHandler`가 `ErrorResponse(code, message)`로 변환한다.
@@ -45,6 +45,9 @@
 - 과거 버전은 수정하지 않는다. 복원은 과거 원문으로 새 버전을 만든다.
 - 삭제는 논리 삭제이며, 검색과 일반 조회에서 제외한다.
 - `ingestion_log`는 감사 이력, `ingestion_tasks`는 워커가 점유하는 Outbox 작업이다.
+- 워커의 claim 대상 여부는 `ingestion_tasks.status = PENDING`으로만 판단한다. `documents.status`는 문서 처리 결과(`PENDING`/`EMBEDDED`/`FAILED`)이며, 재시도 대상 여부를 제한하는 조건으로 사용하지 않는다.
+- claim 쿼리는 `t.status = 'PENDING'`, `d.deleted_at IS NULL`, `d.version = t.document_version`을 함께 만족해야 한다. 논리 삭제된 문서와 최신 버전이 아닌 작업은 처리하지 않는다.
+- 실패 작업을 재시도할 때는 작업 상태를 명시적으로 `PENDING`으로 전이하거나 새 작업을 생성한다. 문서가 `FAILED` 상태여도 위 claim 조건을 만족하면 재시도할 수 있어야 한다.
 - 워커는 `FOR UPDATE SKIP LOCKED`로 작업을 claim하고, 느린 임베딩 추론은 DB 트랜잭션 밖에서 수행한다.
 
 ## 코드 작성 기준
