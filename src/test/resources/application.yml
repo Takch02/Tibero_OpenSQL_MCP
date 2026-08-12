@@ -28,6 +28,10 @@ app:
       initial-delay-ms: 3600000
       batch-size: 10
       embed-batch-size: 32
+      retry:
+        max-attempts: 3
+        initial-backoff-ms: 1000
+        max-backoff-ms: 60000
   chunking:
     size: 500
     overlap: 50
