@@ -3,7 +3,6 @@ package com.test_mcp.tibero_mcp.ingestion;
 import com.test_mcp.tibero_mcp.embedding.EmbeddingService;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentChunk;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -52,35 +51,41 @@ public class EmbeddingWorker {
                 task.documentId(), task.documentVersion());
     if (chunks.isEmpty()) {
       // 이미 다 임베딩된 문서 — 상태만 정리한다.
-      embeddingResultWriter.applyEmbeddings(
-          task.taskId(), task.documentId(), task.documentVersion(), List.of(), List.of());
+      embeddingResultWriter.completeEmbedding(
+          task.taskId(), task.documentId(), task.documentVersion());
       return;
     }
 
     try {
-      List<String> contents = chunks.stream().map(DocumentChunk::getContent).toList();
-      List<float[]> vectors = embedInBatches(contents);
-
-      List<Long> chunkIds = chunks.stream().map(DocumentChunk::getId).toList();
-      List<String> vectorLiterals =
-          vectors.stream().map(embeddingService::toVectorLiteral).toList();
-
-      embeddingResultWriter.applyEmbeddings(
-          task.taskId(), task.documentId(), task.documentVersion(), chunkIds, vectorLiterals);
+      embedAndSaveInBatches(chunks);
+      embeddingResultWriter.completeEmbedding(
+          task.taskId(), task.documentId(), task.documentVersion());
     } catch (RuntimeException e) {
-      // 모델 오류 등 — FAILED로 기록하고 이력을 남긴다. embedding=NULL이 유지되므로 재처리 여지가 있다.
+      // 이미 저장된 청크는 유지하고, 아직 NULL인 청크만 다음 재시도에서 처리한다.
       log.warn("문서 임베딩 실패 (documentId={})", task.documentId(), e);
-      embeddingResultWriter.markFailed(task.taskId(), task.documentId(), task.documentVersion());
+      embeddingResultWriter.handleFailure(
+          task.taskId(), task.documentId(), task.documentVersion(), describeFailure(e));
     }
   }
 
-  // contents를 embedBatchSize 단위로 나눠 순서를 보존한 채 추론한다.
-  private List<float[]> embedInBatches(List<String> contents) {
-    List<float[]> vectors = new ArrayList<>(contents.size());
-    for (int start = 0; start < contents.size(); start += embedBatchSize) {
-      int end = Math.min(start + embedBatchSize, contents.size());
-      vectors.addAll(embeddingService.embedAll(contents.subList(start, end)));
+  // 배치별 결과를 즉시 저장해, 다음 재시도에서 이미 성공한 청크를 다시 추론하지 않는다.
+  private void embedAndSaveInBatches(List<DocumentChunk> chunks) {
+    for (int start = 0; start < chunks.size(); start += embedBatchSize) {
+      int end = Math.min(start + embedBatchSize, chunks.size());
+      List<DocumentChunk> batch = chunks.subList(start, end);
+      List<float[]> vectors =
+          embeddingService.embedAll(batch.stream().map(DocumentChunk::getContent).toList());
+      List<Long> chunkIds = batch.stream().map(DocumentChunk::getId).toList();
+      List<String> vectorLiterals =
+          vectors.stream().map(embeddingService::toVectorLiteral).toList();
+      embeddingResultWriter.saveEmbeddings(chunkIds, vectorLiterals);
     }
-    return vectors;
+  }
+
+  private String describeFailure(RuntimeException exception) {
+    String message = exception.getMessage();
+    String description =
+        exception.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+    return description.length() <= 1000 ? description : description.substring(0, 1000);
   }
 }

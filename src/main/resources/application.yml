@@ -37,6 +37,10 @@ app:
       batch-size: 10
       # 한 번의 embedAll() 호출에 넣을 청크 수 상한(수백 페이지 문서 대비)
       embed-batch-size: 32
+      retry:
+        max-attempts: 3
+        initial-backoff-ms: 1000
+        max-backoff-ms: 60000
   chunking:
     size: 500
     overlap: 50

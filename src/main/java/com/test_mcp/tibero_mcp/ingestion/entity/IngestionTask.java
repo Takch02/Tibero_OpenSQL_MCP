@@ -38,23 +38,42 @@ public class IngestionTask {
   @Column(name = "started_at")
   private Instant startedAt;
 
+  @Column(name = "attempt_count", nullable = false)
+  private int attemptCount;
+
+  @Column(name = "next_attempt_at", nullable = false)
+  private Instant nextAttemptAt;
+
+  @Column(name = "last_error")
+  private String lastError;
+
   public IngestionTask(Long documentId, Integer documentVersion) {
     this.documentId = documentId;
     this.documentVersion = documentVersion;
     this.status = IngestionTaskStatus.PENDING;
     this.createdAt = Instant.now();
+    this.nextAttemptAt = this.createdAt;
   }
 
   public void markProcessing() {
     this.status = IngestionTaskStatus.PROCESSING;
     this.startedAt = Instant.now();
+    this.attemptCount++;
   }
 
   public void markEmbedded() {
     this.status = IngestionTaskStatus.EMBEDDED;
+    this.lastError = null;
   }
 
   public void markFailed() {
     this.status = IngestionTaskStatus.FAILED;
+  }
+
+  public void scheduleRetry(Instant nextAttemptAt, String lastError) {
+    this.status = IngestionTaskStatus.PENDING;
+    this.nextAttemptAt = nextAttemptAt;
+    this.lastError = lastError;
+    this.startedAt = null;
   }
 }
