@@ -81,7 +81,7 @@ public class EmbeddingResultWriter {
 
     version.markFailed();
     document.markFailed(documentVersion);
-    task.markFailed();
+    task.markFailed(lastError);
     ingestionLogRepository.save(
         new IngestionLog(
             documentId, documentVersion, IngestionEvent.FAILED, DocumentStatus.FAILED));

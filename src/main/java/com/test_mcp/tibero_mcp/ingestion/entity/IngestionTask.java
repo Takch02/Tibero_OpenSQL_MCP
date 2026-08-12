@@ -66,8 +66,9 @@ public class IngestionTask {
     this.lastError = null;
   }
 
-  public void markFailed() {
+  public void markFailed(String lastError) {
     this.status = IngestionTaskStatus.FAILED;
+    this.lastError = lastError;
   }
 
   public void scheduleRetry(Instant nextAttemptAt, String lastError) {

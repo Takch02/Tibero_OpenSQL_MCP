@@ -109,9 +109,12 @@ class EmbeddingWorkerFailureIntegrationTest {
     assertThat(
             ingestionTaskRepository
                 .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
-                .orElseThrow()
-                .getStatus())
-        .isEqualTo(IngestionTaskStatus.FAILED);
+                .orElseThrow())
+        .satisfies(
+            task -> {
+              assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
+              assertThat(task.getLastError()).contains("모델 추론 오류");
+            });
     assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
         .isEqualTo(DocumentStatus.FAILED);
   }
