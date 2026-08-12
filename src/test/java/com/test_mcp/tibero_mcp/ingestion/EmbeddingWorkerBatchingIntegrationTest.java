@@ -1,6 +1,7 @@
 package com.test_mcp.tibero_mcp.ingestion;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
@@ -75,6 +76,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
               List<?> input = invocation.getArgument(0);
               return input.stream().map(t -> vector()).toList();
             });
+    given(embeddingService.toVectorLiteral(any(float[].class))).willReturn(vectorLiteral());
 
     // when
     embeddingWorker.pollAndProcess();
@@ -101,6 +103,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
               List<?> input = invocation.getArgument(0);
               return input.stream().map(content -> vector()).toList();
             });
+    given(embeddingService.toVectorLiteral(any(float[].class))).willReturn(vectorLiteral());
 
     embeddingWorker.pollAndProcess();
     Document updated =
@@ -133,5 +136,9 @@ class EmbeddingWorkerBatchingIntegrationTest {
 
   private static float[] vector() {
     return new float[384];
+  }
+
+  private static String vectorLiteral() {
+    return "[" + "0,".repeat(383) + "0]";
   }
 }
