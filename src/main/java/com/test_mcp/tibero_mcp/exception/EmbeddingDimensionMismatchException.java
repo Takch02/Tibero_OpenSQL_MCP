@@ -4,6 +4,8 @@ package com.test_mcp.tibero_mcp.exception;
 public class EmbeddingDimensionMismatchException extends TiberoMcpException {
 
   public EmbeddingDimensionMismatchException(int actual, int expected) {
-    super("임베딩 차원(%d)이 설정값(app.embedding.dimension=%d)과 다릅니다.".formatted(actual, expected));
+    super(
+        ErrorCode.EMBEDDING_DIMENSION_MISMATCH,
+        "임베딩 차원(%d)이 설정값(app.embedding.dimension=%d)과 다릅니다.".formatted(actual, expected));
   }
 }

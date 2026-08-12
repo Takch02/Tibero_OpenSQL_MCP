@@ -4,6 +4,6 @@ package com.test_mcp.tibero_mcp.exception;
 public class InvalidRequestException extends TiberoMcpException {
 
   public InvalidRequestException(String message) {
-    super(message);
+    super(ErrorCode.INVALID_REQUEST, message);
   }
 }

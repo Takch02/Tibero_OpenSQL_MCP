@@ -4,6 +4,6 @@ package com.test_mcp.tibero_mcp.exception;
 public class DocumentNotFoundException extends TiberoMcpException {
 
   public DocumentNotFoundException(Long documentId) {
-    super("문서를 찾을 수 없습니다. documentId=" + documentId);
+    super(ErrorCode.DOCUMENT_NOT_FOUND, "문서를 찾을 수 없습니다. documentId=" + documentId);
   }
 }
