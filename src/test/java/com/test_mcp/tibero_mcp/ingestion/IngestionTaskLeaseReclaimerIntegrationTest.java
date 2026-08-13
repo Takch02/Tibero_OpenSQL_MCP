@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -65,6 +66,16 @@ class IngestionTaskLeaseReclaimerIntegrationTest {
   @Autowired IngestionLogRepository ingestionLogRepository;
 
   @Autowired JdbcTemplate jdbcTemplate;
+
+  @BeforeEach
+  void clearDatabase() {
+    // Spring 테스트 컨텍스트가 다른 통합 테스트와 재사용될 수 있으므로 claim 대상 작업을 격리한다.
+    jdbcTemplate.update("DELETE FROM ingestion_log");
+    jdbcTemplate.update("DELETE FROM document_chunks");
+    jdbcTemplate.update("DELETE FROM ingestion_tasks");
+    jdbcTemplate.update("DELETE FROM document_versions");
+    jdbcTemplate.update("DELETE FROM documents");
+  }
 
   @Test
   void 만료된_PROCESSING_작업은_한번만_회수되어_다시_claim할_수_있다() throws Exception {
