@@ -119,7 +119,7 @@ class IngestionTaskClaimerIntegrationTest {
     embeddingResultWriter.handleFailure(
         task.getId(), uploaded.getId(), uploaded.getVersion(), "최종 실패 재현");
 
-    // 재시도 정책이 FAILED 작업을 다시 PENDING으로 전이한 상태를 재현한다.
+    // FAILED 문서에 PENDING 작업을 구성해 문서 상태가 claim 조건을 제한하지 않는지 검증한다.
     assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
         .isEqualTo(IngestionTaskStatus.FAILED);
     jdbcTemplate.update(
