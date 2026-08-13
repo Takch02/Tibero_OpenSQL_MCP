@@ -2,6 +2,7 @@ package com.test_mcp.tibero_mcp.ingestion;
 
 import com.test_mcp.tibero_mcp.exception.DocumentNotFoundException;
 import com.test_mcp.tibero_mcp.exception.DocumentVersionConflictException;
+import com.test_mcp.tibero_mcp.exception.IngestionRetryConflictException;
 import com.test_mcp.tibero_mcp.exception.IngestionTaskNotFoundException;
 import com.test_mcp.tibero_mcp.exception.InvalidRequestException;
 import com.test_mcp.tibero_mcp.ingestion.chunking.Chunker;
@@ -12,6 +13,7 @@ import com.test_mcp.tibero_mcp.ingestion.entity.DocumentVersion;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
+import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkBatchWriter;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
@@ -21,6 +23,7 @@ import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -116,6 +119,39 @@ public class IngestionService {
         documentChunkRepository.countByDocumentIdAndDocumentVersionAndEmbeddingIsNotNull(
             document.getId(), document.getVersion());
     return IngestionStatusResponse.from(document, task, chunkCount, embeddedChunkCount);
+  }
+
+  @Transactional
+  // 문서 잠금으로 update/delete와 수동 재처리를 직렬화해, 같은 FAILED 작업이 두 번 재예약되지 않게 한다.
+  public Document retryFailedIngestion(Long documentId, String ownerId, Integer expectedVersion) {
+    Document document = findLockedActiveDocument(documentId, ownerId);
+    validateExpectedVersion(document, expectedVersion);
+    IngestionTask task =
+        ingestionTaskRepository
+            .findByDocumentIdAndDocumentVersion(documentId, document.getVersion())
+            .orElseThrow(
+                () -> new IngestionTaskNotFoundException(documentId, document.getVersion()));
+    if (task.getStatus() != IngestionTaskStatus.FAILED) {
+      throw new IngestionRetryConflictException(
+          documentId, document.getVersion(), task.getStatus());
+    }
+
+    String previousFailure = task.getLastError();
+    DocumentVersion version =
+        documentVersionRepository
+            .findByDocumentIdAndVersion(documentId, document.getVersion())
+            .orElseThrow(() -> new DocumentNotFoundException(documentId));
+    version.markPending();
+    document.markPending(document.getVersion());
+    task.retryManually(Instant.now());
+    ingestionLogRepository.save(
+        new IngestionLog(
+            documentId,
+            document.getVersion(),
+            IngestionEvent.MANUAL_RETRY,
+            DocumentStatus.PENDING,
+            previousFailure));
+    return document;
   }
 
   @Transactional

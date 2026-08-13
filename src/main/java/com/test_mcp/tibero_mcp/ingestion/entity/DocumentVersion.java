@@ -67,4 +67,9 @@ public class DocumentVersion {
   public void markFailed() {
     this.status = DocumentStatus.FAILED;
   }
+
+  // 과거 버전은 수정하지 않고, 최신 FAILED 버전에 한해서만 수동 재처리 상태로 전이한다.
+  public void markPending() {
+    this.status = DocumentStatus.PENDING;
+  }
 }

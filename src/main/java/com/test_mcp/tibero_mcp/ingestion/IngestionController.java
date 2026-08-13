@@ -4,6 +4,7 @@ import com.test_mcp.tibero_mcp.exception.InvalidRequestException;
 import com.test_mcp.tibero_mcp.ingestion.dto.DocumentResponse;
 import com.test_mcp.tibero_mcp.ingestion.dto.DocumentVersionResponse;
 import com.test_mcp.tibero_mcp.ingestion.dto.IngestionStatusResponse;
+import com.test_mcp.tibero_mcp.ingestion.dto.ManualRetryRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.RestoreDocumentRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UpdateDocumentRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UploadRequest;
@@ -71,6 +72,25 @@ public class IngestionController {
       @PathVariable Long documentId, @RequestParam String ownerId) {
     validateOwnerId(ownerId);
     return ingestionService.getIngestionStatus(documentId, ownerId);
+  }
+
+  @PostMapping("/{documentId}/ingestion/retry")
+  @Operation(
+      summary = "최종 실패 인제스천 수동 재처리",
+      description =
+          "소유자가 최신 FAILED 작업만 새 자동 재시도 사이클로 전환한다. 이전 정상 검색 버전은 유지되고, NULL 임베딩 청크만 다시 처리한다.")
+  @ApiResponse(responseCode = "200", description = "수동 재처리 예약 성공")
+  @ApiResponse(responseCode = "409", description = "최종 실패 상태가 아니거나 문서 버전 충돌")
+  public DocumentResponse retryFailedIngestion(
+      @PathVariable Long documentId, @RequestBody ManualRetryRequest request) {
+    if (!StringUtils.hasText(request.ownerId())
+        || request.expectedVersion() == null
+        || request.expectedVersion() < 1) {
+      throw new InvalidRequestException("ownerId/expectedVersion(1 이상)은 필수입니다.");
+    }
+    return DocumentResponse.from(
+        ingestionService.retryFailedIngestion(
+            documentId, request.ownerId(), request.expectedVersion()));
   }
 
   @GetMapping("/{documentId}/versions")
