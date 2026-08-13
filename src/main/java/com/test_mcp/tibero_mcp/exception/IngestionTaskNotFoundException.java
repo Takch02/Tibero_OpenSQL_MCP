@@ -5,4 +5,13 @@ public class IngestionTaskNotFoundException extends TiberoMcpException {
   public IngestionTaskNotFoundException(Long taskId) {
     super(ErrorCode.INGESTION_TASK_NOT_FOUND, "Ingestion 작업을 찾을 수 없습니다. taskId=" + taskId);
   }
+
+  public IngestionTaskNotFoundException(Long documentId, Integer documentVersion) {
+    super(
+        ErrorCode.INGESTION_TASK_NOT_FOUND,
+        "Ingestion 작업을 찾을 수 없습니다. documentId="
+            + documentId
+            + ", documentVersion="
+            + documentVersion);
+  }
 }
