@@ -39,7 +39,12 @@ public class EmbeddingWorker {
   public void pollAndProcess() {
     List<IngestionTaskClaim> claimedTasks = ingestionTaskClaimer.claimPendingTasks(batchSize);
     for (IngestionTaskClaim task : claimedTasks) {
-      process(task);
+      try {
+        process(task);
+      } catch (RuntimeException e) {
+        // 이미 claim한 다른 작업은 lease 만료까지 정체되지 않도록 작업 단위로 예외를 격리한다.
+        log.warn("작업 처리 중 예외로 다음 작업을 계속 진행합니다. taskId={}", task.taskId(), e);
+      }
     }
   }
 
