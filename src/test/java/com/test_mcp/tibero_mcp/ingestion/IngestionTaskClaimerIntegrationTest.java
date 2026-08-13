@@ -117,7 +117,11 @@ class IngestionTaskClaimerIntegrationTest {
             .orElseThrow();
     IngestionTaskClaim initialClaim = ingestionTaskClaimer.claimPendingTasks(1).getFirst();
     embeddingResultWriter.handleFailure(
-        task.getId(), uploaded.getId(), uploaded.getVersion(), initialClaim.workerId(), "최종 실패 재현");
+        task.getId(),
+        uploaded.getId(),
+        uploaded.getVersion(),
+        initialClaim.workerId(),
+        IngestionFailureSummary.from(new RuntimeException("최종 실패 재현")));
 
     // FAILED 문서에 PENDING 작업을 구성해 문서 상태가 claim 조건을 제한하지 않는지 검증한다.
     assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())

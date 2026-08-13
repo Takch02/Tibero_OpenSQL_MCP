@@ -7,5 +7,6 @@ public enum IngestionEvent {
   RESTORED,
   EMBEDDED,
   FAILED,
-  LEASE_EXPIRED
+  LEASE_EXPIRED,
+  MANUAL_RETRY
 }

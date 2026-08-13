@@ -91,7 +91,8 @@ class EmbeddingWorkerFailureIntegrationTest {
             task -> {
               assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.PENDING);
               assertThat(task.getAttemptCount()).isEqualTo(1);
-              assertThat(task.getLastError()).contains("모델 추론 오류");
+              assertThat(task.getLastError()).contains("EMBEDDING_INFERENCE_FAILED");
+              assertThat(task.getLastError()).doesNotContain("모델 추론 오류");
               assertThat(task.getNextAttemptAt()).isAfter(beforeFirstFailure);
             });
 
@@ -113,7 +114,8 @@ class EmbeddingWorkerFailureIntegrationTest {
         .satisfies(
             task -> {
               assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
-              assertThat(task.getLastError()).contains("모델 추론 오류");
+              assertThat(task.getLastError()).contains("EMBEDDING_INFERENCE_FAILED");
+              assertThat(task.getLastError()).doesNotContain("모델 추론 오류");
             });
     assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
         .isEqualTo(DocumentStatus.FAILED);

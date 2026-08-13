@@ -70,13 +70,10 @@ public class EmbeddingWorker {
       completeEmbedding(task);
     } catch (RuntimeException e) {
       // 이미 저장된 청크는 유지하고, 아직 NULL인 청크만 다음 재시도에서 처리한다.
-      log.warn("문서 임베딩 실패 (documentId={})", task.documentId(), e);
+      IngestionFailureSummary failure = IngestionFailureSummary.from(e);
+      log.warn("문서 임베딩 실패 (documentId={}, failureCode={})", task.documentId(), failure.code());
       if (!embeddingResultWriter.handleFailure(
-          task.taskId(),
-          task.documentId(),
-          task.documentVersion(),
-          task.workerId(),
-          describeFailure(e))) {
+          task.taskId(), task.documentId(), task.documentVersion(), task.workerId(), failure)) {
         log.info("lease를 잃은 작업의 실패 처리를 건너뜁니다. taskId={}", task.taskId());
       }
     }
@@ -120,12 +117,5 @@ public class EmbeddingWorker {
       log.info("lease를 잃은 작업 처리를 중단합니다. taskId={}", task.taskId());
     }
     return renewed;
-  }
-
-  private String describeFailure(RuntimeException exception) {
-    String message = exception.getMessage();
-    String description =
-        exception.getClass().getSimpleName() + (message == null ? "" : ": " + message);
-    return description.length() <= 1000 ? description : description.substring(0, 1000);
   }
 }

@@ -112,6 +112,16 @@ public class IngestionTask {
     clearLease();
   }
 
+  // 운영자의 명시적 재처리는 이전 자동 재시도와 분리된 새 처리 사이클이므로 시도 횟수를 초기화한다.
+  public void retryManually(Instant nextAttemptAt) {
+    this.status = IngestionTaskStatus.PENDING;
+    this.attemptCount = 0;
+    this.nextAttemptAt = nextAttemptAt;
+    this.lastError = null;
+    this.startedAt = null;
+    clearLease();
+  }
+
   private void clearLease() {
     this.claimedBy = null;
     this.heartbeatAt = null;

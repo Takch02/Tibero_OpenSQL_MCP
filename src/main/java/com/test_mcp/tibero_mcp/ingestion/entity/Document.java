@@ -87,6 +87,13 @@ public class Document {
     }
   }
 
+  // 재처리 중에도 마지막 정상 검색 버전은 유지하고 최신 버전의 처리 상태만 PENDING으로 되돌린다.
+  public void markPending(Integer pendingVersion) {
+    if (Objects.equals(this.version, pendingVersion)) {
+      this.status = DocumentStatus.PENDING;
+    }
+  }
+
   public void update(String title, String content, String contentHash, String category) {
     this.title = title;
     this.content = content;

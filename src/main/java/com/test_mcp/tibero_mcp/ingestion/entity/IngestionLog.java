@@ -36,15 +36,28 @@ public class IngestionLog {
   @Column(nullable = false)
   private DocumentStatus status;
 
+  @Column(name = "details")
+  private String details;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
   public IngestionLog(
       Long documentId, Integer documentVersion, IngestionEvent event, DocumentStatus status) {
+    this(documentId, documentVersion, event, status, null);
+  }
+
+  public IngestionLog(
+      Long documentId,
+      Integer documentVersion,
+      IngestionEvent event,
+      DocumentStatus status,
+      String details) {
     this.documentId = documentId;
     this.documentVersion = documentVersion;
     this.event = event;
     this.status = status;
+    this.details = details;
     this.createdAt = Instant.now();
   }
 }
