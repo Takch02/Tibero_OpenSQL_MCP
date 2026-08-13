@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "ingestion_tasks")
 @Getter
 @NoArgsConstructor
+// 문서 버전별 Outbox 작업. PROCESSING은 영구 상태가 아니라 worker 소유권을 가진 lease다.
 public class IngestionTask {
 
   @Id
@@ -47,6 +48,15 @@ public class IngestionTask {
   @Column(name = "last_error")
   private String lastError;
 
+  @Column(name = "claimed_by")
+  private String claimedBy;
+
+  @Column(name = "heartbeat_at")
+  private Instant heartbeatAt;
+
+  @Column(name = "lease_expires_at")
+  private Instant leaseExpiresAt;
+
   public IngestionTask(Long documentId, Integer documentVersion) {
     this.documentId = documentId;
     this.documentVersion = documentVersion;
@@ -55,26 +65,56 @@ public class IngestionTask {
     this.nextAttemptAt = this.createdAt;
   }
 
-  public void markProcessing() {
+  // claim과 lease 기록을 함께 남겨, 다른 인스턴스가 같은 작업을 처리하지 못하게 한다.
+  public void markProcessing(String workerId, Instant now, Instant leaseExpiresAt) {
     this.status = IngestionTaskStatus.PROCESSING;
-    this.startedAt = Instant.now();
+    this.startedAt = now;
     this.attemptCount++;
+    this.claimedBy = workerId;
+    this.heartbeatAt = now;
+    this.leaseExpiresAt = leaseExpiresAt;
+  }
+
+  // 만료 회수 뒤에는 claimedBy가 비워지므로, 종료된 옛 워커는 lease를 다시 연장할 수 없다.
+  public boolean renewLease(String workerId, Instant now, Instant leaseExpiresAt) {
+    if (this.status != IngestionTaskStatus.PROCESSING || !workerId.equals(this.claimedBy)) {
+      return false;
+    }
+
+    this.heartbeatAt = now;
+    this.leaseExpiresAt = leaseExpiresAt;
+    return true;
+  }
+
+  // 완료·실패 전이 전에 호출해 lease를 잃은 워커가 최신 검색 버전을 덮어쓰지 못하게 한다.
+  public boolean isClaimedBy(String workerId) {
+    return this.status == IngestionTaskStatus.PROCESSING && workerId.equals(this.claimedBy);
   }
 
   public void markEmbedded() {
     this.status = IngestionTaskStatus.EMBEDDED;
     this.lastError = null;
+    clearLease();
   }
 
   public void markFailed(String lastError) {
     this.status = IngestionTaskStatus.FAILED;
     this.lastError = lastError;
+    clearLease();
   }
 
+  // 재시도는 새로운 claim이 필요하므로 기존 worker 소유권을 지운다.
   public void scheduleRetry(Instant nextAttemptAt, String lastError) {
     this.status = IngestionTaskStatus.PENDING;
     this.nextAttemptAt = nextAttemptAt;
     this.lastError = lastError;
     this.startedAt = null;
+    clearLease();
+  }
+
+  private void clearLease() {
+    this.claimedBy = null;
+    this.heartbeatAt = null;
+    this.leaseExpiresAt = null;
   }
 }

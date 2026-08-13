@@ -35,15 +35,10 @@ public class EmbeddingResultWriter {
   private final DocumentChunkBatchWriter documentChunkBatchWriter;
   private final IngestionLogRepository ingestionLogRepository;
   private final IngestionTaskRepository ingestionTaskRepository;
+  private final IngestionRetryPolicy ingestionRetryPolicy;
 
-  @Value("${app.embedding.worker.retry.max-attempts}")
-  private int maxAttempts;
-
-  @Value("${app.embedding.worker.retry.initial-backoff-ms}")
-  private long initialBackoffMillis;
-
-  @Value("${app.embedding.worker.retry.max-backoff-ms}")
-  private long maxBackoffMillis;
+  @Value("${app.embedding.worker.lease.duration-ms}")
+  private long leaseDurationMillis;
 
   @Transactional
   public void saveEmbeddings(List<Long> chunkIds, List<String> vectorLiterals) {
@@ -51,32 +46,52 @@ public class EmbeddingResultWriter {
   }
 
   @Transactional
-  public void completeEmbedding(Long taskId, Long documentId, Integer documentVersion) {
+  // worker 소유권을 확인하면서 lease를 갱신해 회수기와의 상태 전이를 직렬화한다.
+  public boolean renewLease(Long taskId, String workerId) {
+    Instant now = Instant.now();
+    return findTask(taskId)
+        .renewLease(workerId, now, now.plus(Duration.ofMillis(leaseDurationMillis)));
+  }
+
+  @Transactional
+  // 모든 청크 완료와 lease 소유권을 함께 확인한 경우에만 검색 버전을 새 버전으로 전환한다.
+  public boolean completeEmbedding(
+      Long taskId, Long documentId, Integer documentVersion, String workerId) {
+    Document document = findDocument(documentId);
+    DocumentVersion version = findDocumentVersion(documentId, documentVersion);
+    IngestionTask task = findTask(taskId);
+    if (!task.isClaimedBy(workerId)) {
+      return false;
+    }
     if (documentChunkRepository.existsByDocumentIdAndDocumentVersionAndEmbeddingIsNull(
         documentId, documentVersion)) {
       throw new IncompleteEmbeddingException(documentId, documentVersion);
     }
 
-    Document document = findDocument(documentId);
-    DocumentVersion version = findDocumentVersion(documentId, documentVersion);
     // version, document, IngestionTask.status 임베딩 성공으로 변경
     version.markEmbedded();
     document.markEmbedded(documentVersion);
-    findTask(taskId).markEmbedded();
+    task.markEmbedded();
     ingestionLogRepository.save(
         new IngestionLog(
             documentId, documentVersion, IngestionEvent.EMBEDDED, DocumentStatus.EMBEDDED));
+    return true;
   }
 
   @Transactional
-  public void handleFailure(
-      Long taskId, Long documentId, Integer documentVersion, String lastError) {
+  // 옛 워커의 실패 결과가 새 worker가 점유한 작업을 재시도·실패 상태로 바꾸지 못하게 한다.
+  public boolean handleFailure(
+      Long taskId, Long documentId, Integer documentVersion, String workerId, String lastError) {
     Document document = findDocument(documentId);
     DocumentVersion version = findDocumentVersion(documentId, documentVersion);
     IngestionTask task = findTask(taskId);
-    if (task.getAttemptCount() < maxAttempts) {
-      task.scheduleRetry(Instant.now().plus(calculateBackoff(task.getAttemptCount())), lastError);
-      return;
+    if (!task.isClaimedBy(workerId)) {
+      return false;
+    }
+    if (ingestionRetryPolicy.canRetry(task.getAttemptCount())) {
+      task.scheduleRetry(
+          ingestionRetryPolicy.nextAttemptAt(task.getAttemptCount(), Instant.now()), lastError);
+      return true;
     }
 
     version.markFailed();
@@ -85,20 +100,12 @@ public class EmbeddingResultWriter {
     ingestionLogRepository.save(
         new IngestionLog(
             documentId, documentVersion, IngestionEvent.FAILED, DocumentStatus.FAILED));
-  }
-
-  private Duration calculateBackoff(int attemptCount) {
-    long multiplier = 1L << Math.min(attemptCount - 1, 30);
-    long delay =
-        initialBackoffMillis > maxBackoffMillis / multiplier
-            ? maxBackoffMillis
-            : initialBackoffMillis * multiplier;
-    return Duration.ofMillis(delay);
+    return true;
   }
 
   private IngestionTask findTask(Long taskId) {
     return ingestionTaskRepository
-        .findById(taskId)
+        .findByIdForUpdate(taskId)
         .orElseThrow(() -> new IngestionTaskNotFoundException(taskId));
   }
 
