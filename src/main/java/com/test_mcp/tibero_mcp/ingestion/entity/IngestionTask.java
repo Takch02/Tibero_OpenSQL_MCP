@@ -112,15 +112,6 @@ public class IngestionTask {
     clearLease();
   }
 
-  // 비정상 종료로 heartbeat가 끊긴 작업만 회수기가 다시 처리 가능한 상태로 돌린다.
-  public void requeueExpiredLease(String lastError) {
-    this.status = IngestionTaskStatus.PENDING;
-    this.startedAt = null;
-    this.nextAttemptAt = Instant.now();
-    this.lastError = lastError;
-    clearLease();
-  }
-
   private void clearLease() {
     this.claimedBy = null;
     this.heartbeatAt = null;

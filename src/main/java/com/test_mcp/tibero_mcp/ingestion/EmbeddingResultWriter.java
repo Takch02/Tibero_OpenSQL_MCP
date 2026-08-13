@@ -35,15 +35,10 @@ public class EmbeddingResultWriter {
   private final DocumentChunkBatchWriter documentChunkBatchWriter;
   private final IngestionLogRepository ingestionLogRepository;
   private final IngestionTaskRepository ingestionTaskRepository;
+  private final IngestionRetryPolicy ingestionRetryPolicy;
 
-  @Value("${app.embedding.worker.retry.max-attempts}")
-  private int maxAttempts;
-
-  @Value("${app.embedding.worker.retry.initial-backoff-ms}")
-  private long initialBackoffMillis;
-
-  @Value("${app.embedding.worker.retry.max-backoff-ms}")
-  private long maxBackoffMillis;
+  @Value("${app.embedding.worker.lease.duration-ms}")
+  private long leaseDurationMillis;
 
   @Transactional
   public void saveEmbeddings(List<Long> chunkIds, List<String> vectorLiterals) {
@@ -93,8 +88,9 @@ public class EmbeddingResultWriter {
     if (!task.isClaimedBy(workerId)) {
       return false;
     }
-    if (task.getAttemptCount() < maxAttempts) {
-      task.scheduleRetry(Instant.now().plus(calculateBackoff(task.getAttemptCount())), lastError);
+    if (ingestionRetryPolicy.canRetry(task.getAttemptCount())) {
+      task.scheduleRetry(
+          ingestionRetryPolicy.nextAttemptAt(task.getAttemptCount(), Instant.now()), lastError);
       return true;
     }
 
@@ -105,18 +101,6 @@ public class EmbeddingResultWriter {
         new IngestionLog(
             documentId, documentVersion, IngestionEvent.FAILED, DocumentStatus.FAILED));
     return true;
-  }
-
-  @Value("${app.embedding.worker.lease.duration-ms}")
-  private long leaseDurationMillis;
-
-  private Duration calculateBackoff(int attemptCount) {
-    long multiplier = 1L << Math.min(attemptCount - 1, 30);
-    long delay =
-        initialBackoffMillis > maxBackoffMillis / multiplier
-            ? maxBackoffMillis
-            : initialBackoffMillis * multiplier;
-    return Duration.ofMillis(delay);
   }
 
   private IngestionTask findTask(Long taskId) {

@@ -9,6 +9,7 @@ import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
+import com.test_mcp.tibero_mcp.ingestion.repository.DocumentVersionRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionLogRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionTaskRepository;
 import java.time.Instant;
@@ -59,6 +60,8 @@ class IngestionTaskLeaseReclaimerIntegrationTest {
 
   @Autowired DocumentRepository documentRepository;
 
+  @Autowired DocumentVersionRepository documentVersionRepository;
+
   @Autowired IngestionLogRepository ingestionLogRepository;
 
   @Autowired JdbcTemplate jdbcTemplate;
@@ -76,6 +79,7 @@ class IngestionTaskLeaseReclaimerIntegrationTest {
     jdbcTemplate.update(
         "UPDATE ingestion_tasks SET lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = ?",
         firstClaim.taskId());
+    Instant beforeReclaim = Instant.now();
 
     ExecutorService reclaimers = Executors.newFixedThreadPool(2);
     try {
@@ -97,10 +101,14 @@ class IngestionTaskLeaseReclaimerIntegrationTest {
     assertThat(reclaimedTask.getHeartbeatAt()).isNull();
     assertThat(reclaimedTask.getLeaseExpiresAt()).isNull();
     assertThat(reclaimedTask.getLastError()).contains("lease expired");
+    assertThat(reclaimedTask.getNextAttemptAt()).isAfter(beforeReclaim);
     assertThat(ingestionLogRepository.findByDocumentId(uploaded.getId()))
         .extracting(IngestionLog::getEvent)
         .contains(IngestionEvent.LEASE_EXPIRED);
 
+    jdbcTemplate.update(
+        "UPDATE ingestion_tasks SET next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?",
+        firstClaim.taskId());
     IngestionTaskClaim secondClaim = ingestionTaskClaimer.claimPendingTasks(1).getFirst();
     assertThat(secondClaim.taskId()).isEqualTo(firstClaim.taskId());
     assertThat(ingestionTaskRepository.findById(firstClaim.taskId()).orElseThrow())
@@ -145,8 +153,49 @@ class IngestionTaskLeaseReclaimerIntegrationTest {
         .isEqualTo(DocumentStatus.PENDING);
 
     // 다른 테스트의 전역 claim 대상에 남지 않도록 회수된 작업을 다시 점유한다.
+    jdbcTemplate.update(
+        "UPDATE ingestion_tasks SET next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?",
+        claim.taskId());
     assertThat(ingestionTaskClaimer.claimPendingTasks(1).getFirst().taskId())
         .isEqualTo(claim.taskId());
+  }
+
+  @Test
+  void lease_만료가_재시도_상한에_도달하면_문서_버전과_작업을_FAILED로_전이한다() {
+    Document uploaded =
+        ingestionService.upload("lease-final-failure", "제목", "회수 실패 내용", "user-1", null);
+    IngestionTaskClaim claim = ingestionTaskClaimer.claimPendingTasks(1).getFirst();
+    jdbcTemplate.update(
+        """
+        UPDATE ingestion_tasks
+        SET attempt_count = 3,
+            lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'
+        WHERE id = ?
+        """,
+        claim.taskId());
+
+    assertThat(ingestionTaskLeaseReclaimer.reclaimExpiredTasks()).isEqualTo(1);
+
+    assertThat(ingestionTaskRepository.findById(claim.taskId()).orElseThrow())
+        .satisfies(
+            task -> {
+              assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
+              assertThat(task.getLastError()).contains("lease expired");
+            });
+    assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
+        .isEqualTo(DocumentStatus.FAILED);
+    assertThat(
+            documentVersionRepository
+                .findByDocumentIdAndVersion(uploaded.getId(), uploaded.getVersion())
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(DocumentStatus.FAILED);
+    assertThat(ingestionLogRepository.findByDocumentId(uploaded.getId()))
+        .anySatisfy(
+            log -> {
+              assertThat(log.getEvent()).isEqualTo(IngestionEvent.LEASE_EXPIRED);
+              assertThat(log.getStatus()).isEqualTo(DocumentStatus.FAILED);
+            });
   }
 
   @Test
