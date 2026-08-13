@@ -19,6 +19,7 @@ public interface IngestionTaskRepository extends JpaRepository<IngestionTask, Lo
           FROM ingestion_tasks t
           JOIN documents d ON d.id = t.document_id
           WHERE t.status = 'PENDING'
+            AND t.next_attempt_at <= CURRENT_TIMESTAMP
             AND d.deleted_at IS NULL
             AND d.version = t.document_version
           ORDER BY t.id

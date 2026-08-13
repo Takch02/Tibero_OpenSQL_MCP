@@ -70,3 +70,21 @@
 - `./gradlew test --rerun-tasks` 성공 — 32개 테스트, 실패·오류 0건
 - `./gradlew build` 성공 — Spotless 검사와 전체 테스트 포함
 - 잠긴 `PENDING` 작업을 다른 워커가 즉시 건너뛰는 Testcontainers 통합 테스트 추가
+
+## 2026-08-11 — 지연 재시도와 부분 청크 재개
+
+### 목표
+
+일시적인 임베딩 실패가 새 문서 버전의 검색 노출을 중단시키지 않도록 backoff 재시도를 적용하고, 이미 성공한 청크는 다시 추론하지 않는다.
+
+### 구현
+
+- `ingestion_tasks`에 `attempt_count`, `next_attempt_at`, `last_error`를 추가
+- due 시각이 지난 `PENDING` 작업만 `FOR UPDATE SKIP LOCKED` claim 대상으로 제한
+- 실패 시 최대 횟수 전에는 backoff 후 `PENDING`으로 재예약하고, 최대 횟수에서만 문서·버전·작업을 최종 `FAILED`로 전이
+- 청크 배치별 임베딩 결과를 즉시 저장하고, 모든 청크가 완료된 뒤에만 `current_search_version`을 교체
+
+### 다음 작업
+
+- `PROCESSING` lease 만료 작업 회수
+- 최종 실패 작업의 수동 재처리와 처리 상태 조회 API

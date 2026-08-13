@@ -23,7 +23,7 @@
 - 도메인 객체와 DTO 변환은 Controller·Service·Mapper 중 한 곳에서 수행하고, 동일 흐름에서 분산하지 않는다.
 - 기존 응답 형식은 요청 없이 바꾸지 않는다.
 - Controller는 `@Tag`, `@Operation`, `@ApiResponse`로 문서화한다.
-- 도메인 예외는 `exception` 패키지에서 `TiberoMcpException`을 상속하고, `GlobalExceptionHandler`가 `ErrorResponse(code, message)`로 변환한다.
+- 도메인 예외는 `exception` 패키지에서 `TiberoMcpException`을 상속하고 `ErrorCode` enum을 지정한다. `IllegalStateException`에 문자열을 직접 넣지 않으며, `GlobalExceptionHandler`는 enum의 코드·HTTP 상태로 `ErrorResponse(code, message)`를 만든다.
 
 ## 패키지 경계
 

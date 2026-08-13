@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -28,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest
+@TestPropertySource(properties = "app.embedding.worker.retry.max-attempts=1")
 @Testcontainers
 class IngestionTaskClaimerIntegrationTest {
 
@@ -113,12 +115,16 @@ class IngestionTaskClaimerIntegrationTest {
         ingestionTaskRepository
             .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
             .orElseThrow();
-    embeddingResultWriter.markFailed(task.getId(), uploaded.getId(), uploaded.getVersion());
+    ingestionTaskClaimer.claimPendingTasks(1);
+    embeddingResultWriter.handleFailure(
+        task.getId(), uploaded.getId(), uploaded.getVersion(), "최종 실패 재현");
 
-    // 재시도 정책이 FAILED 작업을 다시 PENDING으로 전이한 상태를 재현한다.
+    // FAILED 문서에 PENDING 작업을 구성해 문서 상태가 claim 조건을 제한하지 않는지 검증한다.
     assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
         .isEqualTo(IngestionTaskStatus.FAILED);
-    jdbcTemplate.update("UPDATE ingestion_tasks SET status = 'PENDING' WHERE id = ?", task.getId());
+    jdbcTemplate.update(
+        "UPDATE ingestion_tasks SET status = 'PENDING', next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?",
+        task.getId());
 
     assertThat(documentRepository.findById(uploaded.getId()).orElseThrow().getStatus())
         .isEqualTo(DocumentStatus.FAILED);
@@ -131,6 +137,22 @@ class IngestionTaskClaimerIntegrationTest {
             });
     assertThat(ingestionTaskRepository.findById(task.getId()).orElseThrow().getStatus())
         .isEqualTo(IngestionTaskStatus.PROCESSING);
+  }
+
+  @Test
+  void 다음_실행_시각이_도래하지_않은_PENDING_작업은_claim하지_않는다() {
+    Document uploaded = ingestionService.upload("future-retry-key", "제목", "처리할 내용", "user-1", null);
+    jdbcTemplate.update(
+        "UPDATE ingestion_tasks SET next_attempt_at = CURRENT_TIMESTAMP + INTERVAL '1 hour' WHERE document_id = ?",
+        uploaded.getId());
+
+    assertThat(ingestionTaskClaimer.claimPendingTasks(1)).isEmpty();
+    assertThat(
+            ingestionTaskRepository
+                .findByDocumentIdAndDocumentVersion(uploaded.getId(), uploaded.getVersion())
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(IngestionTaskStatus.PENDING);
   }
 
   private void await(CountDownLatch latch) {

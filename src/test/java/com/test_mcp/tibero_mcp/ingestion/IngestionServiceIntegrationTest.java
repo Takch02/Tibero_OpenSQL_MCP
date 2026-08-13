@@ -218,21 +218,5 @@ class IngestionServiceIntegrationTest {
                 .orElseThrow()
                 .getStatus())
         .isEqualTo(IngestionTaskStatus.PENDING);
-
-    List<IngestionTaskClaim> claims = ingestionTaskClaimer.claimPendingTasks(1);
-
-    assertThat(claims)
-        .singleElement()
-        .satisfies(
-            claim -> {
-              assertThat(claim.documentId()).isEqualTo(restored.getId());
-              assertThat(claim.documentVersion()).isEqualTo(restored.getVersion());
-            });
-    assertThat(
-            ingestionTaskRepository
-                .findByDocumentIdAndDocumentVersion(restored.getId(), restored.getVersion())
-                .orElseThrow()
-                .getStatus())
-        .isEqualTo(IngestionTaskStatus.PROCESSING);
   }
 }

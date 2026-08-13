@@ -141,8 +141,8 @@ curl -X POST http://localhost:8080/api/documents \
 
 ## 다음 단계
 
-- 작업 재시도 횟수, 실패 원인, backoff 정책
 - 처리 중 중단된 `PROCESSING` 작업의 lease 만료·회수
+- 최종 실패 작업의 수동 재처리
 - 문서·버전별 임베딩 처리 상태 조회 API
 - 하이브리드 검색과 벡터 인덱스 성능 검증
 
