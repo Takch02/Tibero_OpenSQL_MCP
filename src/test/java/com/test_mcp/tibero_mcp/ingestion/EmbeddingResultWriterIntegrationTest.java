@@ -50,11 +50,11 @@ class EmbeddingResultWriterIntegrationTest {
   void 존재하지_않는_documentId면_DocumentNotFoundException을_던진다() {
     Long missingId = -1L;
 
-    assertThatThrownBy(() -> embeddingResultWriter.completeEmbedding(-1L, missingId, 1))
+    assertThatThrownBy(() -> embeddingResultWriter.completeEmbedding(-1L, missingId, 1, "worker"))
         .isInstanceOf(DocumentNotFoundException.class)
         .hasMessageContaining(String.valueOf(missingId));
 
-    assertThatThrownBy(() -> embeddingResultWriter.handleFailure(-1L, missingId, 1, "실패"))
+    assertThatThrownBy(() -> embeddingResultWriter.handleFailure(-1L, missingId, 1, "worker", "실패"))
         .isInstanceOf(DocumentNotFoundException.class);
   }
 
@@ -66,7 +66,7 @@ class EmbeddingResultWriterIntegrationTest {
     assertThatThrownBy(
             () ->
                 embeddingResultWriter.completeEmbedding(
-                    claim.taskId(), claim.documentId(), claim.documentVersion()))
+                    claim.taskId(), claim.documentId(), claim.documentVersion(), claim.workerId()))
         .isInstanceOf(IncompleteEmbeddingException.class)
         .hasMessageContaining("미임베딩 청크");
 

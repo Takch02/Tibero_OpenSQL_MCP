@@ -45,32 +45,45 @@ public class EmbeddingWorker {
 
   // 문서 하나를 처리한다. 추론(느림)은 여기서 트랜잭션 없이 수행하고, DB 반영만 별도 트랜잭션 빈에 위임한다.
   void process(IngestionTaskClaim task) {
+    if (!renewLease(task)) {
+      return;
+    }
     List<DocumentChunk> chunks =
         documentChunkRepository
             .findByDocumentIdAndDocumentVersionAndEmbeddingIsNullOrderByChunkIndexAsc(
                 task.documentId(), task.documentVersion());
     if (chunks.isEmpty()) {
       // 이미 다 임베딩된 문서 — 상태만 정리한다.
-      embeddingResultWriter.completeEmbedding(
-          task.taskId(), task.documentId(), task.documentVersion());
+      completeEmbedding(task);
       return;
     }
 
     try {
-      embedAndSaveInBatches(chunks);
-      embeddingResultWriter.completeEmbedding(
-          task.taskId(), task.documentId(), task.documentVersion());
+      if (!embedAndSaveInBatches(task, chunks)) {
+        return;
+      }
+      completeEmbedding(task);
     } catch (RuntimeException e) {
       // 이미 저장된 청크는 유지하고, 아직 NULL인 청크만 다음 재시도에서 처리한다.
       log.warn("문서 임베딩 실패 (documentId={})", task.documentId(), e);
-      embeddingResultWriter.handleFailure(
-          task.taskId(), task.documentId(), task.documentVersion(), describeFailure(e));
+      if (!embeddingResultWriter.handleFailure(
+          task.taskId(),
+          task.documentId(),
+          task.documentVersion(),
+          task.workerId(),
+          describeFailure(e))) {
+        log.info("lease를 잃은 작업의 실패 처리를 건너뜁니다. taskId={}", task.taskId());
+      }
     }
   }
 
   // 배치별 결과를 즉시 저장해, 다음 재시도에서 이미 성공한 청크를 다시 추론하지 않는다.
-  private void embedAndSaveInBatches(List<DocumentChunk> chunks) {
+  private boolean embedAndSaveInBatches(IngestionTaskClaim task, List<DocumentChunk> chunks) {
     for (int start = 0; start < chunks.size(); start += embedBatchSize) {
+      // 느린 추론 전에 lease를 연장하고, 이미 회수된 작업이면 모델 호출 자체를 중단한다.
+      if (!renewLease(task)) {
+        return false;
+      }
       int end = Math.min(start + embedBatchSize, chunks.size());
       List<DocumentChunk> batch = chunks.subList(start, end);
       List<float[]> vectors =
@@ -79,7 +92,29 @@ public class EmbeddingWorker {
       List<String> vectorLiterals =
           vectors.stream().map(embeddingService::toVectorLiteral).toList();
       embeddingResultWriter.saveEmbeddings(chunkIds, vectorLiterals);
+      // 저장 뒤에도 소유권을 확인해 다음 배치가 회수된 작업을 계속 처리하지 않게 한다.
+      if (!renewLease(task)) {
+        return false;
+      }
     }
+    return true;
+  }
+
+  // 완료 상태 전이는 현재 lease 소유자에게만 허용한다. false는 회수된 옛 워커라는 뜻이다.
+  private void completeEmbedding(IngestionTaskClaim task) {
+    if (!embeddingResultWriter.completeEmbedding(
+        task.taskId(), task.documentId(), task.documentVersion(), task.workerId())) {
+      log.info("lease를 잃은 작업의 완료 처리를 건너뜁니다. taskId={}", task.taskId());
+    }
+  }
+
+  // heartbeat는 짧은 별도 트랜잭션으로 갱신해 모델 추론 동안 DB 잠금을 오래 잡지 않는다.
+  private boolean renewLease(IngestionTaskClaim task) {
+    boolean renewed = embeddingResultWriter.renewLease(task.taskId(), task.workerId());
+    if (!renewed) {
+      log.info("lease를 잃은 작업 처리를 중단합니다. taskId={}", task.taskId());
+    }
+    return renewed;
   }
 
   private String describeFailure(RuntimeException exception) {

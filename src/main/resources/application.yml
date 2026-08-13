@@ -41,6 +41,10 @@ app:
         max-attempts: 3
         initial-backoff-ms: 1000
         max-backoff-ms: 60000
+      lease:
+        duration-ms: 120000
+        reclaim-interval-ms: 30000
+        reclaim-batch-size: 10
   chunking:
     size: 500
     overlap: 50

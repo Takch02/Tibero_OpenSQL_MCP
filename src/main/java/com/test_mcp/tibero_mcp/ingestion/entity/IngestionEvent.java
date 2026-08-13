@@ -6,5 +6,6 @@ public enum IngestionEvent {
   DELETED,
   RESTORED,
   EMBEDDED,
-  FAILED
+  FAILED,
+  LEASE_EXPIRED
 }
