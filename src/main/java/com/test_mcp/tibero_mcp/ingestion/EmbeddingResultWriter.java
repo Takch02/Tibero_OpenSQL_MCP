@@ -81,7 +81,11 @@ public class EmbeddingResultWriter {
   @Transactional
   // 옛 워커의 실패 결과가 새 worker가 점유한 작업을 재시도·실패 상태로 바꾸지 못하게 한다.
   public boolean handleFailure(
-      Long taskId, Long documentId, Integer documentVersion, String workerId, String lastError) {
+      Long taskId,
+      Long documentId,
+      Integer documentVersion,
+      String workerId,
+      IngestionFailureSummary failure) {
     Document document = findDocument(documentId);
     DocumentVersion version = findDocumentVersion(documentId, documentVersion);
     IngestionTask task = findTask(taskId);
@@ -90,13 +94,14 @@ public class EmbeddingResultWriter {
     }
     if (ingestionRetryPolicy.canRetry(task.getAttemptCount())) {
       task.scheduleRetry(
-          ingestionRetryPolicy.nextAttemptAt(task.getAttemptCount(), Instant.now()), lastError);
+          ingestionRetryPolicy.nextAttemptAt(task.getAttemptCount(), Instant.now()),
+          failure.toStorageValue());
       return true;
     }
 
     version.markFailed();
     document.markFailed(documentVersion);
-    task.markFailed(lastError);
+    task.markFailed(failure.toStorageValue());
     ingestionLogRepository.save(
         new IngestionLog(
             documentId, documentVersion, IngestionEvent.FAILED, DocumentStatus.FAILED));

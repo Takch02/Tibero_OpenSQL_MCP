@@ -5,8 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.test_mcp.tibero_mcp.exception.DocumentNotFoundException;
-import com.test_mcp.tibero_mcp.exception.IngestionRetryConflictException;
 import com.test_mcp.tibero_mcp.ingestion.entity.Document;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
@@ -110,52 +108,79 @@ class ManualIngestionRetryIntegrationTest {
             log -> {
               assertThat(log.getEvent()).isEqualTo(IngestionEvent.MANUAL_RETRY);
               assertThat(log.getStatus()).isEqualTo(DocumentStatus.PENDING);
-              assertThat(log.getDetails()).contains("최종 실패 재현");
+              assertThat(log.getDetails()).contains("EMBEDDING_INFERENCE_FAILED");
+              assertThat(log.getDetails()).doesNotContain("최종 실패 재현");
             });
   }
 
   @Test
-  void PENDING_PROCESSING_EMBEDDED_작업의_수동_재처리를_차단한다() {
+  void PENDING_PROCESSING_EMBEDDED_작업의_수동_재처리는_409_오류_응답을_반환한다() throws Exception {
     Document document =
         ingestionService.upload("manual-retry-conflict", "제목", "본문", "user-1", null);
 
-    assertThatThrownByRetry(document, IngestionTaskStatus.PENDING);
+    assertRetryConflict(document);
 
     ingestionTaskClaimer.claimPendingTasks(1);
-    assertThatThrownByRetry(document, IngestionTaskStatus.PROCESSING);
+    assertRetryConflict(document);
 
     jdbcTemplate.update(
         "UPDATE ingestion_tasks SET status = 'EMBEDDED' WHERE id = ?", taskOf(document).getId());
-    assertThatThrownByRetry(document, IngestionTaskStatus.EMBEDDED);
+    assertRetryConflict(document);
   }
 
   @Test
-  void 다른_소유자와_삭제된_문서는_수동_재처리할_수_없다() {
+  void 다른_소유자와_삭제된_문서의_수동_재처리는_404_오류_응답을_반환한다() throws Exception {
     Document failed = createFailedDocument("manual-retry-owner", "user-1");
 
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> ingestionService.retryFailedIngestion(failed.getId(), "other-user", 1))
-        .isInstanceOf(DocumentNotFoundException.class);
+    assertRetryNotFound(failed.getId(), "other-user", 1);
 
     ingestionService.delete(failed.getId(), "user-1", 1);
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> ingestionService.retryFailedIngestion(failed.getId(), "user-1", 1))
-        .isInstanceOf(DocumentNotFoundException.class);
+    assertRetryNotFound(failed.getId(), "user-1", 1);
+  }
+
+  @Test
+  void 과거_expectedVersion으로_수동_재처리하면_409_버전_충돌_응답을_반환한다() throws Exception {
+    Document failed = createFailedDocument("manual-retry-version", "user-1");
+    ingestionService.update(failed.getId(), "user-1", 1, "수정 제목", "수정 본문", null);
+
+    mockMvc
+        .perform(retryRequest(failed.getId(), "user-1", 1))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DOCUMENT_VERSION_CONFLICT"));
   }
 
   private Document createFailedDocument(String idempotencyKey, String ownerId) {
     Document document = ingestionService.upload(idempotencyKey, "제목", "본문", ownerId, null);
     IngestionTaskClaim claim = ingestionTaskClaimer.claimPendingTasks(1).getFirst();
     embeddingResultWriter.handleFailure(
-        claim.taskId(), claim.documentId(), claim.documentVersion(), claim.workerId(), "최종 실패 재현");
+        claim.taskId(),
+        claim.documentId(),
+        claim.documentVersion(),
+        claim.workerId(),
+        IngestionFailureSummary.from(new RuntimeException("최종 실패 재현")));
     return document;
   }
 
-  private void assertThatThrownByRetry(Document document, IngestionTaskStatus expectedStatus) {
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> ingestionService.retryFailedIngestion(document.getId(), "user-1", 1))
-        .isInstanceOf(IngestionRetryConflictException.class)
-        .hasMessageContaining("taskStatus=" + expectedStatus);
+  private void assertRetryConflict(Document document) throws Exception {
+    mockMvc
+        .perform(retryRequest(document.getId(), "user-1", 1))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INGESTION_RETRY_CONFLICT"));
+  }
+
+  private void assertRetryNotFound(Long documentId, String ownerId, int expectedVersion)
+      throws Exception {
+    mockMvc
+        .perform(retryRequest(documentId, ownerId, expectedVersion))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
+  }
+
+  private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
+      retryRequest(Long documentId, String ownerId, int expectedVersion) {
+    return post("/api/documents/{documentId}/ingestion/retry", documentId)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"ownerId\":\"%s\",\"expectedVersion\":%d}".formatted(ownerId, expectedVersion));
   }
 
   private IngestionTask taskOf(Document document) {

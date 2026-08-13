@@ -54,7 +54,14 @@ class EmbeddingResultWriterIntegrationTest {
         .isInstanceOf(DocumentNotFoundException.class)
         .hasMessageContaining(String.valueOf(missingId));
 
-    assertThatThrownBy(() -> embeddingResultWriter.handleFailure(-1L, missingId, 1, "worker", "실패"))
+    assertThatThrownBy(
+            () ->
+                embeddingResultWriter.handleFailure(
+                    -1L,
+                    missingId,
+                    1,
+                    "worker",
+                    IngestionFailureSummary.from(new RuntimeException("실패"))))
         .isInstanceOf(DocumentNotFoundException.class);
   }
 
