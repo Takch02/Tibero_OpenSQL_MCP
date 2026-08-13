@@ -2,6 +2,7 @@ package com.test_mcp.tibero_mcp.ingestion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,5 +84,56 @@ class IngestionControllerIntegrationTest {
 
     assertThat(objectMapper.readTree(secondResponse).get("documentId"))
         .isEqualTo(objectMapper.readTree(firstResponse).get("documentId"));
+  }
+
+  @Test
+  void 소유자는_최신_버전의_인제스천_상태를_조회한다() throws Exception {
+    String body =
+        """
+        {"idempotencyKey":"ctrl-status-key","title":"제목","content":"본문 내용입니다.","ownerId":"user-1"}
+        """;
+    String uploadResponse =
+        mockMvc
+            .perform(post("/api/documents").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    long documentId = objectMapper.readTree(uploadResponse).get("documentId").asLong();
+
+    mockMvc
+        .perform(
+            get("/api/documents/{documentId}/ingestion", documentId).param("ownerId", "user-1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.documentId").value(documentId))
+        .andExpect(jsonPath("$.version").value(1))
+        .andExpect(jsonPath("$.currentSearchVersion").doesNotExist())
+        .andExpect(jsonPath("$.documentStatus").value("PENDING"))
+        .andExpect(jsonPath("$.taskStatus").value("PENDING"))
+        .andExpect(jsonPath("$.attemptCount").value(0))
+        .andExpect(jsonPath("$.chunkCount").value(1))
+        .andExpect(jsonPath("$.embeddedChunkCount").value(0));
+  }
+
+  @Test
+  void 다른_소유자는_인제스천_상태를_조회할_수_없다() throws Exception {
+    String body =
+        """
+        {"idempotencyKey":"ctrl-status-owner-key","title":"제목","content":"본문 내용입니다.","ownerId":"user-1"}
+        """;
+    String uploadResponse =
+        mockMvc
+            .perform(post("/api/documents").contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    long documentId = objectMapper.readTree(uploadResponse).get("documentId").asLong();
+
+    mockMvc
+        .perform(
+            get("/api/documents/{documentId}/ingestion", documentId).param("ownerId", "other-user"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
   }
 }

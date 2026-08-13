@@ -3,6 +3,7 @@ package com.test_mcp.tibero_mcp.ingestion;
 import com.test_mcp.tibero_mcp.exception.InvalidRequestException;
 import com.test_mcp.tibero_mcp.ingestion.dto.DocumentResponse;
 import com.test_mcp.tibero_mcp.ingestion.dto.DocumentVersionResponse;
+import com.test_mcp.tibero_mcp.ingestion.dto.IngestionStatusResponse;
 import com.test_mcp.tibero_mcp.ingestion.dto.RestoreDocumentRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UpdateDocumentRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UploadRequest;
@@ -59,6 +60,17 @@ public class IngestionController {
   public DocumentResponse getDocument(@PathVariable Long documentId, @RequestParam String ownerId) {
     validateOwnerId(ownerId);
     return DocumentResponse.from(ingestionService.getDocument(documentId, ownerId));
+  }
+
+  @GetMapping("/{documentId}/ingestion")
+  @Operation(
+      summary = "문서 인제스천 상태 조회",
+      description = "소유자만 최신 버전의 Outbox 상태, 재시도 정보, 청크 임베딩 진행률을 조회한다.")
+  @ApiResponse(responseCode = "200", description = "인제스천 상태 조회 성공")
+  public IngestionStatusResponse getIngestionStatus(
+      @PathVariable Long documentId, @RequestParam String ownerId) {
+    validateOwnerId(ownerId);
+    return ingestionService.getIngestionStatus(documentId, ownerId);
   }
 
   @GetMapping("/{documentId}/versions")

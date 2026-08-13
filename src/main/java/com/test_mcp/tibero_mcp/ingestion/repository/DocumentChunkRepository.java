@@ -17,6 +17,11 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
   boolean existsByDocumentIdAndDocumentVersionAndEmbeddingIsNull(
       Long documentId, Integer documentVersion);
 
+  long countByDocumentIdAndDocumentVersion(Long documentId, Integer documentVersion);
+
+  long countByDocumentIdAndDocumentVersionAndEmbeddingIsNotNull(
+      Long documentId, Integer documentVersion);
+
   // 정형 데이터(권한 owner_id, 최신 버전 여부, 카테고리)와 벡터 유사도(코사인, <=>)를 한 쿼리로 결합한다.
   // owner_id 필터는 검색 권한 경계이므로 항상 걸고, category는 선택적 메타데이터 필터다.
   // d.version = c.document_version 조건으로 문서가 재업로드되어 버전이 올라가도 옛 버전 청크는 검색되지 않는다.

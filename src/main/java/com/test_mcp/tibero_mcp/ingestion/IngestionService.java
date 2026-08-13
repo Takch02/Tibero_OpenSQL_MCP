@@ -2,8 +2,10 @@ package com.test_mcp.tibero_mcp.ingestion;
 
 import com.test_mcp.tibero_mcp.exception.DocumentNotFoundException;
 import com.test_mcp.tibero_mcp.exception.DocumentVersionConflictException;
+import com.test_mcp.tibero_mcp.exception.IngestionTaskNotFoundException;
 import com.test_mcp.tibero_mcp.exception.InvalidRequestException;
 import com.test_mcp.tibero_mcp.ingestion.chunking.Chunker;
+import com.test_mcp.tibero_mcp.ingestion.dto.IngestionStatusResponse;
 import com.test_mcp.tibero_mcp.ingestion.entity.Document;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentStatus;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentVersion;
@@ -11,6 +13,7 @@ import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkBatchWriter;
+import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentVersionRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.IngestionLogRepository;
@@ -31,6 +34,7 @@ public class IngestionService {
 
   private final DocumentRepository documentRepository;
   private final DocumentVersionRepository documentVersionRepository;
+  private final DocumentChunkRepository documentChunkRepository;
   private final DocumentChunkBatchWriter documentChunkBatchWriter;
   private final IngestionLogRepository ingestionLogRepository;
   private final IngestionTaskRepository ingestionTaskRepository;
@@ -95,6 +99,23 @@ public class IngestionService {
         .findByIdAndOwnerId(documentId, ownerId)
         .orElseThrow(() -> new DocumentNotFoundException(documentId));
     return documentVersionRepository.findByDocumentIdOrderByVersionDesc(documentId);
+  }
+
+  @Transactional(readOnly = true)
+  public IngestionStatusResponse getIngestionStatus(Long documentId, String ownerId) {
+    Document document = getDocument(documentId, ownerId);
+    IngestionTask task =
+        ingestionTaskRepository
+            .findByDocumentIdAndDocumentVersion(document.getId(), document.getVersion())
+            .orElseThrow(
+                () -> new IngestionTaskNotFoundException(document.getId(), document.getVersion()));
+    long chunkCount =
+        documentChunkRepository.countByDocumentIdAndDocumentVersion(
+            document.getId(), document.getVersion());
+    long embeddedChunkCount =
+        documentChunkRepository.countByDocumentIdAndDocumentVersionAndEmbeddingIsNotNull(
+            document.getId(), document.getVersion());
+    return IngestionStatusResponse.from(document, task, chunkCount, embeddedChunkCount);
   }
 
   @Transactional
