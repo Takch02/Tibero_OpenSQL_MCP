@@ -120,7 +120,7 @@ v2 임베딩 중에는 v1을 검색하고, v2가 `EMBEDDED`가 된 짧은 트랜
 
 ### 결정
 
-작업을 claim할 때 인스턴스별 worker 식별자와 2분 만료 시각을 기록한다. 임베딩 청크 배치의 추론 전후 heartbeat로 lease를 연장하고, 30초 주기의 회수기가 만료된 작업만 `PENDING`으로 되돌린다.
+작업을 claim할 때 인스턴스별 worker 식별자와 2분 만료 시각을 기록한다. 임베딩 청크 배치의 추론 전후 heartbeat로 lease를 연장하고, 30초 주기의 회수기는 만료 작업에 일반 임베딩 실패와 같은 재시도 상한·backoff를 적용한다.
 
 ### 이유
 
@@ -128,4 +128,4 @@ v2 임베딩 중에는 v1을 검색하고, v2가 `EMBEDDED`가 된 짧은 트랜
 
 ### 결과
 
-heartbeat·완료·실패 전이는 현재 `claimed_by`와 일치하는 경우에만 적용한다. 회수기는 `PROCESSING`이면서 `lease_expires_at`이 지난 행을 잠근 뒤 `PENDING`으로 전이한다. 만료된 옛 워커는 뒤늦게 완료되어도 검색 노출 버전을 바꾸지 못한다. 이미 저장된 청크 임베딩은 유지하므로 회수 뒤에는 `embedding IS NULL`인 청크만 다시 처리한다.
+heartbeat·완료·실패 전이는 현재 `claimed_by`와 일치하는 경우에만 적용한다. 회수기는 `PROCESSING`이면서 `lease_expires_at`이 지난 행을 잠근 뒤 backoff 시각으로 `PENDING` 전이하고, 상한에 도달하면 문서·버전·작업을 최종 `FAILED`로 전이한다. 만료된 옛 워커는 뒤늦게 완료되어도 검색 노출 버전을 바꾸지 못한다. 이미 저장된 청크 임베딩은 유지하므로 회수 뒤에는 `embedding IS NULL`인 청크만 다시 처리한다.
