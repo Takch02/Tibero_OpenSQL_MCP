@@ -8,7 +8,7 @@ PR은 변경 파일 수가 아니라 **독립적으로 이해·검증 가능한 
 2. 기능마다 구현·마이그레이션·그 기능을 검증하는 테스트를 같은 커밋에 둔다.
 3. 별도 기능, README·설계 문서, 포맷 정리는 기능 커밋과 분리한다.
 4. 기존에 있던 사용자 변경이나 이슈 범위 밖 파일은 명시적으로 제외한다.
-5. 모든 커밋은 가능한 한 컴파일 가능해야 하며, PR 전 전체 `./gradlew build`와 `./gradlew test`를 실행한다.
+5. 모든 커밋은 가능한 한 컴파일 가능해야 하며, PR 전 전체 `rtk gradlew clean build --no-daemon`와 `rtk gradlew cleanTest test --no-daemon`를 실행한다. RTK가 없거나 출력·종료 결과를 확인할 수 없으면 같은 원문 Gradle 명령으로 재실행한다.
 
 ## 스테이징 점검 순서
 
@@ -18,11 +18,13 @@ git add -- path/to/file-one path/to/file-two
 
 # 실제 포함 범위와 공백 오류를 확인한다.
 git diff --cached --check
-git diff --cached --stat
+rtk git diff --cached --stat
 
 # 커밋 후 PR의 커밋 경계를 확인한다.
-git log --oneline origin/main..HEAD
+rtk git log --oneline origin/main..HEAD
 ```
+
+- 스테이징 최종 검토에서 전체 patch가 필요하거나 RTK가 오류를 축약하면 `git diff --cached` 원문을 확인한다.
 
 ## 분리 기준
 
