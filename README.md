@@ -21,6 +21,7 @@
 ## 현재 기능
 
 - 문서 업로드·청킹·비동기 로컬 임베딩
+- PDF·UTF-8 TXT 파일 업로드와 버전별 원본 파일 메타데이터 보존
 - `ownerId`, `category` 필터와 pgvector 코사인 유사도 검색을 하나의 SQL로 결합
 - 문서 버전 이력, 낙관적 버전 충돌 방지, 논리 삭제, 과거 버전 기반 새 버전 복원
 - 새 버전이 `PENDING`인 동안 직전 정상 버전(`current_search_version`)을 검색에 유지
@@ -111,9 +112,11 @@ export SPRING_DATASOURCE_PASSWORD='<password>'
 | 목적 | 메서드 | 경로 |
 | --- | --- | --- |
 | 문서 업로드 | `POST` | `/api/documents` |
+| 파일 업로드 | `POST` | `/api/documents/files` |
 | 문서 상태 조회 | `GET` | `/api/documents/{documentId}?ownerId=` |
 | 버전 이력 조회 | `GET` | `/api/documents/{documentId}/versions?ownerId=` |
 | 새 버전 업로드 | `PUT` | `/api/documents/{documentId}` |
+| 파일 새 버전 업로드 | `PUT` | `/api/documents/{documentId}/file` |
 | 논리 삭제 | `DELETE` | `/api/documents/{documentId}?ownerId=&expectedVersion=` |
 | 과거 버전으로 복원 | `POST` | `/api/documents/{documentId}/versions/{version}/restore` |
 | 의미 검색 | `GET` | `/api/search?query=&ownerId=&category=&limit=` |
@@ -132,10 +135,23 @@ curl -X POST http://localhost:8080/api/documents \
   }'
 ```
 
+파일 업로드 예시:
+
+```bash
+curl -X POST http://localhost:8080/api/documents/files \
+  -F 'file=@./security-policy.pdf;type=application/pdf' \
+  -F 'idempotencyKey=policy-file-001' \
+  -F 'ownerId=team-a' \
+  -F 'category=policy'
+```
+
+PDF와 UTF-8 TXT만 지원하며, 파일·요청 크기는 10 MiB 이하로 제한한다. 원본 파일 바이트는 저장하지 않고 추출 원문과 파일명·검증 MIME 타입·크기·SHA-256만 버전 이력에 보관한다. 암호화·손상·텍스트가 없는 PDF와 빈/잘못된 인코딩의 TXT는 거절한다.
+
 ## 프로젝트 문서
 
 - [개발 내역](docs/development-log.md)
 - [설계 결정 사항](docs/design-decisions.md)
+- [서드파티 라이선스](docs/third-party-licenses.md)
 - [코드·API 설계 규칙](docs/ai/engineering-standards.md)
 - [테스트 규칙](docs/ai/testing-standards.md)
 
