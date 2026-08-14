@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.test_mcp.tibero_mcp.ingestion.file.DocumentFileExtractor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -19,6 +20,8 @@ class IngestionControllerValidationTest {
   @Autowired MockMvc mockMvc;
 
   @MockitoBean IngestionService ingestionService;
+
+  @MockitoBean DocumentFileExtractor documentFileExtractor;
 
   @Test
   void content가_비어있으면_400과_에러_코드를_반환한다() throws Exception {
