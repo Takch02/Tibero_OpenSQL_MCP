@@ -10,6 +10,8 @@ import com.test_mcp.tibero_mcp.ingestion.dto.UpdateDocumentRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UploadRequest;
 import com.test_mcp.tibero_mcp.ingestion.dto.UploadResponse;
 import com.test_mcp.tibero_mcp.ingestion.entity.Document;
+import com.test_mcp.tibero_mcp.ingestion.file.DocumentFileExtractor;
+import com.test_mcp.tibero_mcp.ingestion.file.ExtractedFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,7 +25,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -32,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class IngestionController {
 
   private final IngestionService ingestionService;
+  private final DocumentFileExtractor documentFileExtractor;
 
   @PostMapping
   @Operation(
@@ -52,6 +57,35 @@ public class IngestionController {
             request.content(),
             request.ownerId(),
             request.category());
+    return UploadResponse.from(document);
+  }
+
+  @PostMapping(
+      value = "/files",
+      consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+  @Operation(
+      summary = "PDF/TXT 파일 업로드",
+      description =
+          "PDF 또는 UTF-8 TXT에서 원문을 추출해 기존 청킹·Outbox 파이프라인으로 저장한다. 원본 파일 바이트는 저장하지 않고 버전별 파일 메타데이터만 보존한다.")
+  @ApiResponse(responseCode = "200", description = "파일 업로드 성공")
+  @ApiResponse(responseCode = "400", description = "지원하지 않는 형식, 크기 초과, 빈 문서 또는 추출 실패")
+  public UploadResponse uploadFile(
+      @RequestPart("file") MultipartFile file,
+      @RequestParam String idempotencyKey,
+      @RequestParam String ownerId,
+      @RequestParam(required = false) String title,
+      @RequestParam(required = false) String category) {
+    if (!StringUtils.hasText(idempotencyKey) || !StringUtils.hasText(ownerId)) {
+      throw new InvalidRequestException("idempotencyKey/ownerId는 필수입니다.");
+    }
+    ExtractedFile extractedFile = documentFileExtractor.extract(file);
+    Document document =
+        ingestionService.uploadFile(
+            idempotencyKey,
+            StringUtils.hasText(title) ? title : titleFrom(extractedFile.filename()),
+            extractedFile,
+            ownerId,
+            category);
     return UploadResponse.from(document);
   }
 
@@ -127,6 +161,36 @@ public class IngestionController {
             request.category()));
   }
 
+  @PutMapping(
+      value = "/{documentId}/file",
+      consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+  @Operation(
+      summary = "PDF/TXT 파일 새 버전 업로드",
+      description = "파일 원문을 추출해 새 문서 버전을 만든다. 새 버전 임베딩 전까지 이전 정상 검색 버전을 유지한다.")
+  @ApiResponse(responseCode = "200", description = "파일 새 버전 생성 성공")
+  @ApiResponse(responseCode = "400", description = "파일 검증 또는 추출 실패")
+  @ApiResponse(responseCode = "409", description = "문서 버전 충돌")
+  public DocumentResponse updateFile(
+      @PathVariable Long documentId,
+      @RequestPart("file") MultipartFile file,
+      @RequestParam String ownerId,
+      @RequestParam Integer expectedVersion,
+      @RequestParam(required = false) String title,
+      @RequestParam(required = false) String category) {
+    if (!StringUtils.hasText(ownerId) || expectedVersion == null || expectedVersion < 1) {
+      throw new InvalidRequestException("ownerId/expectedVersion(1 이상)은 필수입니다.");
+    }
+    ExtractedFile extractedFile = documentFileExtractor.extract(file);
+    return DocumentResponse.from(
+        ingestionService.updateFile(
+            documentId,
+            ownerId,
+            expectedVersion,
+            StringUtils.hasText(title) ? title : titleFrom(extractedFile.filename()),
+            extractedFile,
+            category));
+  }
+
   @DeleteMapping("/{documentId}")
   @Operation(summary = "문서 논리 삭제", description = "문서를 검색에서 즉시 제외하고 버전 이력은 감사·복구용으로 보존한다.")
   @ApiResponse(responseCode = "204", description = "문서 삭제 성공")
@@ -166,5 +230,10 @@ public class IngestionController {
     if (!StringUtils.hasText(ownerId)) {
       throw new InvalidRequestException("ownerId는 필수입니다.");
     }
+  }
+
+  private static String titleFrom(String filename) {
+    int extensionStart = filename.lastIndexOf('.');
+    return extensionStart > 0 ? filename.substring(0, extensionStart) : filename;
   }
 }

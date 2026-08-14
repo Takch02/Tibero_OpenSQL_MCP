@@ -39,6 +39,8 @@ dependencies {
 
     // MCP 서버(Streamable HTTP) — SearchService를 MCP 도구로 노출
     implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
+    // PDF 원문 추출. Apache License 2.0이며, OCR·선택적 이미지 디코더는 이번 범위에서 사용하지 않는다.
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
     // 스키마 버전 관리 (CREATE EXTENSION vector 포함) — Spring Boot 4의 Flyway 오토컨피그 스타터
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -50,6 +52,8 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-restclient'
+    testImplementation 'org.springframework.boot:spring-boot-resttestclient'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation platform('org.testcontainers:testcontainers-bom:1.20.4')
     testImplementation 'org.testcontainers:junit-jupiter'
