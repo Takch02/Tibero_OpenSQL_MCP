@@ -12,4 +12,9 @@ public abstract class TiberoMcpException extends RuntimeException {
     super(message);
     this.errorCode = errorCode;
   }
+
+  protected TiberoMcpException(ErrorCode errorCode, String message, Throwable cause) {
+    super(message, cause);
+    this.errorCode = errorCode;
+  }
 }

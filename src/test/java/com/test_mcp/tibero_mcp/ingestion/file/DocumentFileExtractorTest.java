@@ -2,16 +2,21 @@ package com.test_mcp.tibero_mcp.ingestion.file;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import com.test_mcp.tibero_mcp.exception.ErrorCode;
 import com.test_mcp.tibero_mcp.exception.FileUploadException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
 import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mock.web.MockMultipartFile;
@@ -19,7 +24,7 @@ import org.springframework.mock.web.MockMultipartFile;
 class DocumentFileExtractorTest {
 
   private final DocumentFileExtractor extractor =
-      new DocumentFileExtractor(10 * 1024 * 1024, 2_000_000);
+      new DocumentFileExtractor(10 * 1024 * 1024, 2_000_000, 1_000);
 
   @Test
   void UTF8_TXT에서_본문과_파일_메타데이터를_추출한다() throws IOException {
@@ -67,15 +72,32 @@ class DocumentFileExtractorTest {
     MockMultipartFile file =
         new MockMultipartFile("file", "policy.txt", "text/plain", new byte[] {(byte) 0xFF});
 
-    assertThatThrownBy(() -> extractor.extract(file))
-        .isInstanceOf(FileUploadException.class)
-        .extracting(error -> ((FileUploadException) error).getErrorCode())
-        .isEqualTo(ErrorCode.FILE_EXTRACTION_FAILED);
+    FileUploadException exception =
+        catchThrowableOfType(() -> extractor.extract(file), FileUploadException.class);
+
+    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_EXTRACTION_FAILED);
+    assertThat(exception.getCause()).isInstanceOf(CharacterCodingException.class);
+  }
+
+  @Test
+  void 손상된_PDF는_원인_예외를_보존한다() {
+    MockMultipartFile file =
+        new MockMultipartFile(
+            "file",
+            "broken.pdf",
+            "application/pdf",
+            "%PDF-broken".getBytes(StandardCharsets.US_ASCII));
+
+    FileUploadException exception =
+        catchThrowableOfType(() -> extractor.extract(file), FileUploadException.class);
+
+    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FILE_EXTRACTION_FAILED);
+    assertThat(exception.getCause()).isInstanceOf(IOException.class);
   }
 
   @Test
   void 파일_크기_상한을_초과하면_본문을_읽기_전에_거절한다() {
-    DocumentFileExtractor smallLimitExtractor = new DocumentFileExtractor(3, 100);
+    DocumentFileExtractor smallLimitExtractor = new DocumentFileExtractor(3, 100, 1);
     MockMultipartFile file =
         new MockMultipartFile(
             "file", "large.txt", "text/plain", "four".getBytes(StandardCharsets.UTF_8));
@@ -84,28 +106,29 @@ class DocumentFileExtractorTest {
         .isInstanceOf(FileUploadException.class)
         .extracting(error -> ((FileUploadException) error).getErrorCode())
         .isEqualTo(ErrorCode.FILE_SIZE_LIMIT_EXCEEDED);
+    assertThatThrownBy(() -> smallLimitExtractor.extract(file)).hasMessage("파일 크기는 3 B 이하여야 합니다.");
   }
 
   @Test
-  void 빈_문서와_손상된_PDF는_거절한다() {
+  void 파일_크기가_상한과_같으면_통과한다() {
+    DocumentFileExtractor boundaryExtractor = new DocumentFileExtractor(4, 100, 1);
+    MockMultipartFile file =
+        new MockMultipartFile(
+            "file", "boundary.txt", "text/plain", "four".getBytes(StandardCharsets.UTF_8));
+
+    assertThat(boundaryExtractor.extract(file).content()).isEqualTo("four");
+  }
+
+  @Test
+  void 빈_TXT는_거절한다() {
     MockMultipartFile emptyText =
         new MockMultipartFile(
             "file", "empty.txt", "text/plain", "  ".getBytes(StandardCharsets.UTF_8));
-    MockMultipartFile invalidPdf =
-        new MockMultipartFile(
-            "file",
-            "broken.pdf",
-            "application/pdf",
-            "%PDF-broken".getBytes(StandardCharsets.US_ASCII));
 
     assertThatThrownBy(() -> extractor.extract(emptyText))
         .isInstanceOf(FileUploadException.class)
         .extracting(error -> ((FileUploadException) error).getErrorCode())
         .isEqualTo(ErrorCode.EMPTY_DOCUMENT);
-    assertThatThrownBy(() -> extractor.extract(invalidPdf))
-        .isInstanceOf(FileUploadException.class)
-        .extracting(error -> ((FileUploadException) error).getErrorCode())
-        .isEqualTo(ErrorCode.FILE_EXTRACTION_FAILED);
   }
 
   @Test
@@ -117,6 +140,30 @@ class DocumentFileExtractorTest {
         .isInstanceOf(FileUploadException.class)
         .extracting(error -> ((FileUploadException) error).getErrorCode())
         .isEqualTo(ErrorCode.FILE_EXTRACTION_FAILED);
+  }
+
+  @Test
+  void PDF_페이지_수가_상한을_초과하면_추출하지_않고_거절한다() throws IOException {
+    DocumentFileExtractor pageLimitedExtractor = new DocumentFileExtractor(1_000_000, 100, 1);
+    MockMultipartFile file =
+        new MockMultipartFile("file", "two-pages.pdf", "application/pdf", twoPagePdf());
+
+    assertThatThrownBy(() -> pageLimitedExtractor.extract(file))
+        .isInstanceOf(FileUploadException.class)
+        .extracting(error -> ((FileUploadException) error).getErrorCode())
+        .isEqualTo(ErrorCode.FILE_SIZE_LIMIT_EXCEEDED);
+  }
+
+  @Test
+  void PDF_본문이_문자_상한을_초과하면_추출_도중_거절한다() throws IOException {
+    DocumentFileExtractor characterLimitedExtractor = new DocumentFileExtractor(1_000_000, 4, 1);
+    MockMultipartFile file =
+        new MockMultipartFile("file", "long.pdf", "application/pdf", pdfWithText("abcde"));
+
+    assertThatThrownBy(() -> characterLimitedExtractor.extract(file))
+        .isInstanceOf(FileUploadException.class)
+        .extracting(error -> ((FileUploadException) error).getErrorCode())
+        .isEqualTo(ErrorCode.FILE_SIZE_LIMIT_EXCEEDED);
   }
 
   private static byte[] fixtureBytes(String filename) throws IOException {
@@ -131,6 +178,33 @@ class DocumentFileExtractorTest {
       document.addPage(new PDPage());
       document.protect(
           new StandardProtectionPolicy("owner-password", "user-password", new AccessPermission()));
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  private static byte[] twoPagePdf() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      document.addPage(new PDPage());
+      document.addPage(new PDPage());
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  private static byte[] pdfWithText(String text) throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      try (PDPageContentStream contentStream = new PDPageContentStream(document, page)) {
+        contentStream.beginText();
+        contentStream.setFont(new PDType1Font(FontName.HELVETICA), 12);
+        contentStream.newLineAtOffset(72, 720);
+        contentStream.showText(text);
+        contentStream.endText();
+      }
       document.save(output);
       return output.toByteArray();
     }

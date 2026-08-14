@@ -3,6 +3,7 @@ package com.test_mcp.tibero_mcp.ingestion.file;
 import com.test_mcp.tibero_mcp.exception.ErrorCode;
 import com.test_mcp.tibero_mcp.exception.FileUploadException;
 import java.io.IOException;
+import java.io.Writer;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -28,12 +29,15 @@ public class DocumentFileExtractor {
 
   private final long maxFileSizeBytes;
   private final int maxExtractedCharacters;
+  private final int maxPdfPages;
 
   public DocumentFileExtractor(
       @Value("${app.document-upload.max-file-size-bytes}") long maxFileSizeBytes,
-      @Value("${app.document-upload.max-extracted-characters}") int maxExtractedCharacters) {
+      @Value("${app.document-upload.max-extracted-characters}") int maxExtractedCharacters,
+      @Value("${app.document-upload.max-pdf-pages}") int maxPdfPages) {
     this.maxFileSizeBytes = maxFileSizeBytes;
     this.maxExtractedCharacters = maxExtractedCharacters;
+    this.maxPdfPages = maxPdfPages;
   }
 
   public ExtractedFile extract(MultipartFile file) {
@@ -56,7 +60,7 @@ public class DocumentFileExtractor {
       throw new FileUploadException(ErrorCode.EMPTY_DOCUMENT, "비어 있는 파일은 업로드할 수 없습니다.");
     }
     if (file.getSize() > maxFileSizeBytes) {
-      throw new FileUploadException(ErrorCode.FILE_SIZE_LIMIT_EXCEEDED, "파일 크기는 10 MiB 이하여야 합니다.");
+      throw FileUploadException.fileSizeLimitExceeded(maxFileSizeBytes);
     }
   }
 
@@ -86,7 +90,7 @@ public class DocumentFileExtractor {
       // 최대 10 MiB로 제한된 요청만 읽으므로 추출 라이브러리에 전달할 바이트 배열 크기는 상한이 있다.
       return file.getBytes();
     } catch (IOException e) {
-      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "파일을 읽을 수 없습니다.");
+      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "파일을 읽을 수 없습니다.", e);
     }
   }
 
@@ -117,13 +121,24 @@ public class DocumentFileExtractor {
       if (document.isEncrypted()) {
         throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "암호화된 PDF는 지원하지 않습니다.");
       }
-      return new PDFTextStripper().getText(document);
+      if (document.getNumberOfPages() > maxPdfPages) {
+        throw new FileUploadException(
+            ErrorCode.FILE_SIZE_LIMIT_EXCEEDED, "PDF는 최대 " + maxPdfPages + "페이지까지만 업로드할 수 있습니다.");
+      }
+      PDFTextStripper textStripper = new PDFTextStripper();
+      textStripper.setEndPage(maxPdfPages);
+      BoundedTextWriter writer = new BoundedTextWriter(maxExtractedCharacters);
+      textStripper.writeText(document, writer);
+      return writer.content();
     } catch (FileUploadException e) {
       throw e;
+    } catch (ExtractedCharacterLimitExceededException e) {
+      throw new FileUploadException(
+          ErrorCode.FILE_SIZE_LIMIT_EXCEEDED, "추출된 문서 내용이 최대 길이를 초과했습니다.", e);
     } catch (InvalidPasswordException e) {
-      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "암호화된 PDF는 지원하지 않습니다.");
+      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "암호화된 PDF는 지원하지 않습니다.", e);
     } catch (IOException e) {
-      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "손상된 PDF는 업로드할 수 없습니다.");
+      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "손상된 PDF는 업로드할 수 없습니다.", e);
     }
   }
 
@@ -136,7 +151,8 @@ public class DocumentFileExtractor {
           .decode(ByteBuffer.wrap(bytes))
           .toString();
     } catch (CharacterCodingException e) {
-      throw new FileUploadException(ErrorCode.FILE_EXTRACTION_FAILED, "TXT 파일은 UTF-8 인코딩이어야 합니다.");
+      throw new FileUploadException(
+          ErrorCode.FILE_EXTRACTION_FAILED, "TXT 파일은 UTF-8 인코딩이어야 합니다.", e);
     }
   }
 
@@ -157,6 +173,48 @@ public class DocumentFileExtractor {
       throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
     }
   }
+
+  // PDFBox가 텍스트를 쓰는 즉시 상한을 검사해 큰 문자열을 완성하기 전에 추출을 중단한다.
+  private static final class BoundedTextWriter extends Writer {
+
+    private final int maxCharacters;
+    private final StringBuilder content = new StringBuilder();
+
+    private BoundedTextWriter(int maxCharacters) {
+      this.maxCharacters = maxCharacters;
+    }
+
+    @Override
+    public void write(char[] characters, int offset, int length) throws IOException {
+      ensureWithinLimit(length);
+      content.append(characters, offset, length);
+    }
+
+    @Override
+    public void write(String value, int offset, int length) throws IOException {
+      ensureWithinLimit(length);
+      content.append(value, offset, offset + length);
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void close() {}
+
+    private void ensureWithinLimit(int incomingLength)
+        throws ExtractedCharacterLimitExceededException {
+      if ((long) content.length() + incomingLength > maxCharacters) {
+        throw new ExtractedCharacterLimitExceededException();
+      }
+    }
+
+    private String content() {
+      return content.toString();
+    }
+  }
+
+  private static final class ExtractedCharacterLimitExceededException extends IOException {}
 
   private enum FileType {
     PDF,
