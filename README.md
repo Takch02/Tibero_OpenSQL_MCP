@@ -136,6 +136,7 @@ curl -X POST http://localhost:8080/api/documents \
 
 - [개발 내역](docs/development-log.md)
 - [설계 결정 사항](docs/design-decisions.md)
+- [OpenSQL Single 실환경 smoke 검증](docs/verification/opensql-single-smoke.md)
 - [코드·API 설계 규칙](docs/ai/engineering-standards.md)
 - [테스트 규칙](docs/ai/testing-standards.md)
 
