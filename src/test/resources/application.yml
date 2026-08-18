@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   jpa:
     hibernate:
       ddl-auto: none
@@ -20,6 +24,10 @@ spring:
         type: SYNC
 
 app:
+  document-upload:
+    max-file-size-bytes: 10485760
+    max-extracted-characters: 2000000
+    max-pdf-pages: 1000
   embedding:
     dimension: 384
     worker:

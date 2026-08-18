@@ -14,6 +14,7 @@ import com.test_mcp.tibero_mcp.ingestion.entity.IngestionEvent;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionLog;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTask;
 import com.test_mcp.tibero_mcp.ingestion.entity.IngestionTaskStatus;
+import com.test_mcp.tibero_mcp.ingestion.file.ExtractedFile;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkBatchWriter;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentRepository;
@@ -49,6 +50,23 @@ public class IngestionService {
   @Transactional
   public Document upload(
       String idempotencyKey, String title, String content, String ownerId, String category) {
+    return upload(idempotencyKey, title, content, ownerId, category, null);
+  }
+
+  @Transactional
+  // 파일 추출 결과도 JSON 본문 업로드와 같은 버전·청킹·Outbox 트랜잭션으로 저장한다.
+  public Document uploadFile(
+      String idempotencyKey, String title, ExtractedFile file, String ownerId, String category) {
+    return upload(idempotencyKey, title, file.content(), ownerId, category, file);
+  }
+
+  private Document upload(
+      String idempotencyKey,
+      String title,
+      String content,
+      String ownerId,
+      String category,
+      ExtractedFile file) {
     String contentHash = sha256(content);
 
     // 같은 요청 재시도만 멱등하게 처리한다. 내용 해시를 전역 중복 기준으로 쓰면 서로 다른 소유자의
@@ -63,13 +81,13 @@ public class IngestionService {
             new Document(idempotencyKey, contentHash, title, content, ownerId, category));
 
     documentVersionRepository.save(
-        new DocumentVersion(
+        DocumentVersion.pending(
             document.getId(),
             document.getVersion(),
             contentHash,
             content,
-            DocumentStatus.PENDING,
-            ownerId));
+            ownerId,
+            file == null ? null : file.toSourceFileMetadata()));
 
     // batch update로 1번 insert
     List<String> chunks = chunker.chunk(content);
@@ -162,6 +180,29 @@ public class IngestionService {
       String title,
       String content,
       String category) {
+    return update(documentId, ownerId, expectedVersion, title, content, category, null);
+  }
+
+  @Transactional
+  // 파일 새 버전도 본문 수정과 동일하게 이전 검색 버전을 유지하며 새 Outbox 작업을 만든다.
+  public Document updateFile(
+      Long documentId,
+      String ownerId,
+      Integer expectedVersion,
+      String title,
+      ExtractedFile file,
+      String category) {
+    return update(documentId, ownerId, expectedVersion, title, file.content(), category, file);
+  }
+
+  private Document update(
+      Long documentId,
+      String ownerId,
+      Integer expectedVersion,
+      String title,
+      String content,
+      String category,
+      ExtractedFile file) {
     Document document = findLockedActiveDocument(documentId, ownerId);
     validateExpectedVersion(document, expectedVersion);
 
@@ -173,13 +214,13 @@ public class IngestionService {
     // 버전 UP
     document.update(title, content, contentHash, category);
     documentVersionRepository.save(
-        new DocumentVersion(
+        DocumentVersion.pending(
             document.getId(),
             document.getVersion(),
             contentHash,
             content,
-            DocumentStatus.PENDING,
-            ownerId));
+            ownerId,
+            file == null ? null : file.toSourceFileMetadata()));
 
     // 임베딩 시작
     documentChunkBatchWriter.insertAll(
@@ -226,13 +267,13 @@ public class IngestionService {
             .orElseThrow(() -> new DocumentNotFoundException(documentId));
     document.restore(source.getContent(), source.getContentHash());
     documentVersionRepository.save(
-        new DocumentVersion(
+        DocumentVersion.pending(
             document.getId(),
             document.getVersion(),
             source.getContentHash(),
             source.getContent(),
-            DocumentStatus.PENDING,
-            ownerId));
+            ownerId,
+            source.sourceFileMetadata()));
     documentChunkBatchWriter.insertAll(
         document.getId(), document.getVersion(), chunker.chunk(source.getContent()));
     ingestionLogRepository.save(

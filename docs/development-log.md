@@ -88,3 +88,26 @@
 
 - `PROCESSING` lease 만료 작업 회수
 - 최종 실패 작업의 수동 재처리와 처리 상태 조회 API
+
+## 2026-08-13 — PDF/TXT 파일 업로드
+
+### 목표
+
+실제 기업 문서 파일을 안전하게 원문 텍스트로 변환하고, 기존 문서 버전·청킹·Outbox 파이프라인으로 연결한다.
+
+### 구현
+
+- `POST /api/documents/files`, `PUT /api/documents/{documentId}/file` multipart API 추가
+- Apache PDFBox 3.0.8로 PDF 텍스트를 추출하고, TXT는 엄격한 UTF-8 디코더로 처리
+- `document_versions`에 파일명·검증 MIME 타입·바이트 크기·파일 SHA-256 저장
+- 파일 입력도 JSON 본문과 동일한 버전 생성·청크 batch insert·Outbox 작업 생성 트랜잭션을 재사용
+- 파일 자체 10 MiB, multipart 요청 전체 11 MiB 상한으로 경계·헤더 오버헤드를 허용
+- PDF는 최대 1,000페이지·200만 문자로 제한하고, 제한 Writer가 문자 상한 초과 시 추출 도중 중단
+- 형식 위장, 빈 문서, 손상·암호화 PDF, 잘못된 UTF-8 TXT를 거절하고 파서 원인은 내부 예외 체인에만 보존
+- 원본 파일 바이트와 파서 오류 원문은 영속화하지 않음
+
+### 검증
+
+- PDF/TXT 추출 단위 테스트: 파일 크기 경계, 페이지·문자 상한, 파서 원인 보존
+- 실제 HTTP multipart 통합 테스트: 10 MiB 정확한 PDF가 요청 헤더·경계를 포함해도 11 MiB 요청 상한 안에서 저장됨
+- multipart 통합 테스트: 업로드, 멱등성, 파일 새 버전, 실패 시 부분 데이터 미생성
