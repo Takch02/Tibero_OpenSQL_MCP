@@ -151,7 +151,7 @@ PDF와 UTF-8 TXT만 지원한다. 파일 자체는 10 MiB 이하이며, multipar
 
 - [개발 내역](docs/development-log.md)
 - [설계 결정 사항](docs/design-decisions.md)
-- [서드파티 라이선스](docs/third-party-licenses.md)
+- [OpenSQL Single 실환경 smoke 검증](docs/verification/opensql-single-smoke.md)
 - [코드·API 설계 규칙](docs/ai/engineering-standards.md)
 - [테스트 규칙](docs/ai/testing-standards.md)
 
