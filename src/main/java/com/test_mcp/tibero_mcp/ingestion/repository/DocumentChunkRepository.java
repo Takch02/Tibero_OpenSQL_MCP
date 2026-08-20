@@ -27,7 +27,8 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
   // d.version = c.document_version 조건으로 문서가 재업로드되어 버전이 올라가도 옛 버전 청크는 검색되지 않는다.
   @Query(
       value =
-          "SELECT c.document_id AS documentId, c.chunk_index AS chunkIndex, c.content AS content, "
+          "SELECT c.document_id AS documentId, c.document_version AS documentVersion, "
+              + "c.chunk_index AS chunkIndex, c.content AS content, "
               + "1 - (c.embedding <=> CAST(:embedding AS vector)) AS score "
               + "FROM document_chunks c "
               + "JOIN documents d ON d.id = c.document_id "

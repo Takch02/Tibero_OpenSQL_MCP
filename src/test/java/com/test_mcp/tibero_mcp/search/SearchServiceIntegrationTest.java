@@ -80,6 +80,7 @@ class SearchServiceIntegrationTest {
     assertThat(filtered)
         .extracting(ChunkSearchProjection::getDocumentId)
         .containsExactly(owned.getId());
+    assertThat(filtered).extracting(ChunkSearchProjection::getDocumentVersion).containsExactly(1);
     assertThat(filtered.get(0).getScore())
         .isCloseTo(1.0, org.assertj.core.data.Offset.offset(0.01));
 

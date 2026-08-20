@@ -1,9 +1,13 @@
 package com.test_mcp.tibero_mcp.search;
 
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.test_mcp.tibero_mcp.ingestion.repository.ChunkSearchProjection;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -33,5 +37,28 @@ class SearchControllerValidationTest {
         .perform(get("/api/search").param("query", "pets").param("ownerId", ""))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  void 검색_결과에_문서_버전을_포함한다() throws Exception {
+    ChunkSearchProjection result = mock(ChunkSearchProjection.class);
+    given(result.getDocumentId()).willReturn(1L);
+    given(result.getDocumentVersion()).willReturn(2);
+    given(result.getChunkIndex()).willReturn(0);
+    given(result.getContent()).willReturn("v2 검색 결과");
+    given(result.getScore()).willReturn(0.9);
+    given(searchService.searchSimilar("보안 정책", "user-1", "security", 5))
+        .willReturn(List.of(result));
+
+    mockMvc
+        .perform(
+            get("/api/search")
+                .param("query", "보안 정책")
+                .param("ownerId", "user-1")
+                .param("category", "security"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].documentId").value(1))
+        .andExpect(jsonPath("$[0].documentVersion").value(2))
+        .andExpect(jsonPath("$[0].chunkIndex").value(0));
   }
 }
