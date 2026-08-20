@@ -81,6 +81,8 @@ class SearchServiceIntegrationTest {
         .extracting(ChunkSearchProjection::getDocumentId)
         .containsExactly(owned.getId());
     assertThat(filtered).extracting(ChunkSearchProjection::getDocumentVersion).containsExactly(1);
+    assertThat(filtered).extracting(ChunkSearchProjection::getDocumentTitle).containsExactly("고양이");
+    assertThat(filtered).extracting(ChunkSearchProjection::getCategory).containsExactly("animal");
     assertThat(filtered.get(0).getScore())
         .isCloseTo(1.0, org.assertj.core.data.Offset.offset(0.01));
 
@@ -101,6 +103,37 @@ class SearchServiceIntegrationTest {
     assertThat(forOtherOwner)
         .extracting(ChunkSearchProjection::getDocumentId)
         .containsExactly(otherOwner.getId());
+  }
+
+  @Test
+  void 새_버전이_PENDING이면_마지막_정상_검색_버전과_현재_메타데이터를_반환한다() {
+    Document document =
+        ingestionService.upload(
+            "key-version", "초기 보안 정책", "관리자 계정은 MFA를 사용합니다.", "version-user", "security");
+    given(embeddingService.embed(anyString())).willReturn(fixedVector());
+    given(embeddingService.embedAll(anyList()))
+        .willAnswer(
+            invocation -> {
+              List<?> input = invocation.getArgument(0);
+              return input.stream().map(t -> fixedVector()).toList();
+            });
+    given(embeddingService.toVectorLiteral(any())).willAnswer(inv -> toLiteral(inv.getArgument(0)));
+    embeddingWorker.pollAndProcess();
+
+    // v2는 아직 임베딩하지 않아도, 검색은 마지막 정상 버전(v1)을 계속 사용해야 한다.
+    ingestionService.update(
+        document.getId(), "version-user", 1, "개정 보안 정책", "관리자 계정은 강화된 MFA를 사용합니다.", "security");
+
+    List<ChunkSearchProjection> result =
+        searchService.searchSimilar("관리자 계정", "version-user", "security", 10);
+
+    assertThat(result)
+        .extracting(
+            ChunkSearchProjection::getDocumentId,
+            ChunkSearchProjection::getDocumentTitle,
+            ChunkSearchProjection::getDocumentVersion,
+            ChunkSearchProjection::getCategory)
+        .contains(org.assertj.core.groups.Tuple.tuple(document.getId(), "개정 보안 정책", 1, "security"));
   }
 
   private static float[] fixedVector() {

@@ -43,7 +43,9 @@ class SearchControllerValidationTest {
   void 검색_결과에_문서_버전을_포함한다() throws Exception {
     ChunkSearchProjection result = mock(ChunkSearchProjection.class);
     given(result.getDocumentId()).willReturn(1L);
+    given(result.getDocumentTitle()).willReturn("보안 정책");
     given(result.getDocumentVersion()).willReturn(2);
+    given(result.getCategory()).willReturn("security");
     given(result.getChunkIndex()).willReturn(0);
     given(result.getContent()).willReturn("v2 검색 결과");
     given(result.getScore()).willReturn(0.9);
@@ -58,7 +60,9 @@ class SearchControllerValidationTest {
                 .param("category", "security"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].documentId").value(1))
+        .andExpect(jsonPath("$[0].documentTitle").value("보안 정책"))
         .andExpect(jsonPath("$[0].documentVersion").value(2))
+        .andExpect(jsonPath("$[0].category").value("security"))
         .andExpect(jsonPath("$[0].chunkIndex").value(0));
   }
 }
