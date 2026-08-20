@@ -31,6 +31,25 @@
 - p50/p95 반복 측정과 owner/category 필터에서 다양한 질의 벡터의 recall@10 검증이 남아 있다.
 - Single 결과를 HA 또는 운영 트래픽 성능 근거로 확대하지 않는다.
 
+## 2026-08-18 — Smoke 전용 실패 주입과 수동 재처리 검증 기반
+
+### 목표
+
+실제 임베딩 실패 시에도 마지막 정상 검색 버전이 유지되고, 운영자의 수동 재처리로 최신 버전을 안전하게 복구하는 흐름을 OpenSQL Single에서 재현한다.
+
+### 구현
+
+- `opensql-smoke` 프로필에서만 `[[OPENSQL_SMOKE_FAIL]]` 표시 문구가 든 임베딩 배치를 정해진 횟수만큼 실패시키는 카오스 주입기 추가
+- 기본·CI 프로필에는 no-op 주입기만 등록해 일반 실행에 실패 주입이 섞이지 않도록 분리
+- `failure-api` smoke 명령으로 v1 성공 → v2 최종 실패 → 이전 버전 검색 유지 → 수동 재처리 → v2 검색 전환 자동 검증
+- 버전·청크·Outbox 작업·감사 로그를 함께 조회하는 OpenSQL SQL과 영상 실행 절차 문서 추가
+
+### 검증
+
+- `SmokeEmbeddingFailureInjectorTest`: 표시 문구와 실패 횟수 소진 규칙 검증
+- `OpenSqlSmokeFailureRecoveryIntegrationTest`: 실제 Worker → ResultWriter 실패 경로, v1 검색 유지, 재처리 API, v2 전환 검증
+- OpenSQL Single 실환경에서 `v1 EMBEDDED → v2 FAILED → v1 검색 유지 → 수동 재처리 → v2 EMBEDDED`와 DB 감사 이력 확인 완료: [검증 기록](verification/opensql-single-failure-recovery-smoke.md)
+
 ## 2026-08-09 — 문서 버전 생명주기
 
 ### 목표

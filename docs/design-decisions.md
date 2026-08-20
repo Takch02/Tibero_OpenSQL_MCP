@@ -157,3 +157,17 @@ PDF와 UTF-8 TXT 파일을 요청 수명 안에서 텍스트로 추출해 기존
 ### 검증 경계
 
 OpenSQL Single에서 `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` 생성과 카탈로그 정의를 확인했다. 소량 청크에서는 플래너가 순차 스캔을 선택할 수 있으므로, 1천·1만 청크의 실행계획·지연시간·recall·인덱스 크기를 별도 성능 측정으로 기록했다. 10만 청크 측정은 현재 VM 자원 한계로 후속 검증 항목이다.
+
+## DD-013. 실패 주입은 smoke 프로필에서만 실제 워커 경로에 적용한다
+
+### 결정
+
+`opensql-smoke` 프로필에서만 표시 문구가 든 임베딩 배치를 제한된 횟수만큼 예외로 중단한다. 예외는 `EmbeddingWorker`의 기존 catch 절을 거쳐 `EmbeddingResultWriter.handleFailure(...)`로 전달한다. 기본·CI 프로필은 no-op 주입기를 사용한다.
+
+### 이유
+
+DB 상태를 직접 `FAILED`로 바꾸면 임베딩 실패·backoff·안전한 오류 요약·lease 소유권 검증 경로를 실증할 수 없다. 반대로 일반 프로필에 실패 기능을 노출하면 운영 입력이 우연히 테스트 문구를 포함했을 때 실패하는 위험이 생긴다.
+
+### 결과
+
+v2 실패 중에도 `current_search_version`은 v1을 유지한다. 주입 횟수를 자동 재시도 상한과 같게 두면, 최종 실패 뒤 수동 재처리는 새 시도 사이클로 전이되고 남은 NULL 청크를 실제 워커가 정상 처리한다. 이 장치는 OpenSQL Single 전용 smoke DB에서만 사용하며 HA 검증 근거는 아니다.
