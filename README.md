@@ -23,6 +23,7 @@
 - 문서 업로드·청킹·비동기 로컬 임베딩
 - PDF·UTF-8 TXT 파일 업로드와 버전별 원본 파일 메타데이터 보존
 - `ownerId`, `category` 필터와 pgvector 코사인 유사도 검색을 하나의 SQL로 결합
+- 코사인 거리 연산자(`<=>`)와 동일한 연산자 클래스의 부분 HNSW 인덱스로 임베딩 완료 청크 검색 가속
 - 문서 버전 이력, 낙관적 버전 충돌 방지, 논리 삭제, 과거 버전 기반 새 버전 복원
 - 새 버전이 `PENDING`인 동안 직전 정상 버전(`current_search_version`)을 검색에 유지
 - 문서 버전당 하나의 Outbox 작업과 `FOR UPDATE SKIP LOCKED` 기반 다중 워커 점유

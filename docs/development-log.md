@@ -1,5 +1,36 @@
 # 개발 내역
 
+## 2026-08-19 — OpenSQL HNSW 벡터 인덱스 검증
+
+### 목표
+
+청크 수가 증가할 때 코사인 벡터 검색이 전체 스캔으로 선형 증가하지 않도록 HNSW 인덱스를 적용하고, OpenSQL Single에서 실제 실행계획과 지연시간을 비교한다.
+
+### 구현
+
+- Flyway V11로 `document_chunks.embedding`에 `vector_cosine_ops` HNSW 부분 인덱스 추가
+  - 검색 SQL의 코사인 거리 연산자(`<=>`)와 연산자 클래스를 일치
+  - `embedding IS NOT NULL` 청크만 인덱스에 포함
+- Testcontainers pgvector 통합 테스트로 Flyway 인덱스 정의 검증
+- OpenSQL 전용 1천/1만 청크 benchmark SQL 추가
+  - 무필터, owner, owner + category 조건의 `EXPLAIN (ANALYZE, BUFFERS)` 비교
+  - exact baseline 대비 HNSW 무필터 `recall@10`, 인덱스 생성 시간·크기 기록
+
+### 측정 결과
+
+- 1천 청크: HNSW를 생성해도 세 조건 모두 `Seq Scan`이 선택돼 성능 이득 없음
+- 1만 청크: 세 조건에서 `idx_vector_benchmark_embedding_hnsw`의 `Index Scan`이 선택됨
+  - 무필터: 3,403.620 ms → 11.211 ms (단일 실행 약 304배)
+  - owner: 1,711.538 ms → 7.018 ms (단일 실행 약 244배)
+  - owner + category: 695.874 ms → 7.741 ms (단일 실행 약 90배)
+  - 무필터 recall@10: 1.0, HNSW 생성 11.317초, 인덱스 20 MB / 테이블 16 MB
+
+### 한계와 다음 검증
+
+- 측정은 OpenSQL Single, UTM x86_64 에뮬레이션, synthetic vector, 질의 벡터 하나의 단일 실행 결과다.
+- p50/p95 반복 측정과 owner/category 필터에서 다양한 질의 벡터의 recall@10 검증이 남아 있다.
+- Single 결과를 HA 또는 운영 트래픽 성능 근거로 확대하지 않는다.
+
 ## 2026-08-09 — 문서 버전 생명주기
 
 ### 목표

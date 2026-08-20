@@ -143,3 +143,17 @@ PDF와 UTF-8 TXT 파일을 요청 수명 안에서 텍스트로 추출해 기존
 ### 안전 경계
 
 파일 자체는 10 MiB, multipart 요청 전체는 경계·헤더 여유를 포함해 11 MiB로 제한하고, 확장자·MIME·PDF 헤더를 함께 확인한다. PDF는 최대 1,000페이지·200만 문자까지만 추출한다. 문자 상한은 `PDFTextStripper.writeText(...)`의 제한 Writer에서 적용하므로 상한을 넘는 전체 문자열을 먼저 만들지 않는다. PDF는 암호화·손상·텍스트 없음, TXT는 UTF-8 디코딩 실패·빈 내용을 거절한다. 파서 예외 원인은 서버 내부 예외 체인에만 보존하고, 원문은 API 응답이나 DB 감사 이력에 저장하지 않는다.
+
+## DD-012. 벡터 검색에는 코사인 부분 HNSW 인덱스를 사용한다
+
+### 결정
+
+`document_chunks.embedding`에 `vector_cosine_ops` 연산자 클래스의 HNSW 부분 인덱스를 추가한다. 인덱스는 `embedding IS NOT NULL` 청크만 포함한다.
+
+### 이유
+
+검색 SQL은 코사인 거리 연산자(`<=>`)로 정렬한다. 따라서 같은 연산자 클래스가 필요하며, 임베딩 전의 NULL 청크는 검색 조건에서도 제외되므로 인덱스 공간을 차지할 이유가 없다.
+
+### 검증 경계
+
+OpenSQL Single에서 `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` 생성과 카탈로그 정의를 확인했다. 소량 청크에서는 플래너가 순차 스캔을 선택할 수 있으므로, 1천·1만 청크의 실행계획·지연시간·recall·인덱스 크기를 별도 성능 측정으로 기록했다. 10만 청크 측정은 현재 VM 자원 한계로 후속 검증 항목이다.
