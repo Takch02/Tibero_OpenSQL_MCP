@@ -15,7 +15,7 @@ readonly POLL_INTERVAL_SECONDS="${OPENSQL_SMOKE_POLL_INTERVAL_SECONDS:-5}"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/opensql-smoke.sh <start|status|api|stop>
+Usage: ./scripts/opensql-smoke.sh <start|status|api|failure-api|stop>
 
 Required environment variables:
   OPENSQL_SMOKE_JDBC_URL       Disposable OpenSQL database JDBC URL
@@ -31,6 +31,7 @@ Commands:
   start   Start the application on the OpenSQL smoke database and wait for /v3/api-docs.
   status  Show the application process and API readiness.
   api     Run upload -> embedding -> search -> update -> delete -> restore smoke flow.
+  failure-api  Run v1 success -> v2 injected failure -> manual retry -> v2 recovery flow.
   stop    Stop the application before manual SQL checks such as SKIP LOCKED.
 USAGE
 }
@@ -73,6 +74,7 @@ start() {
     export SPRING_DATASOURCE_URL="${OPENSQL_SMOKE_JDBC_URL}"
     export SPRING_DATASOURCE_USERNAME="${OPENSQL_SMOKE_DB_USERNAME}"
     export SPRING_DATASOURCE_PASSWORD="${OPENSQL_SMOKE_DB_PASSWORD}"
+    export SPRING_PROFILES_ACTIVE="opensql-smoke${SPRING_PROFILES_ACTIVE:+,${SPRING_PROFILES_ACTIVE}}"
     export SERVER_PORT="${PORT}"
     cd "${PROJECT_ROOT}"
     exec ./gradlew bootRun --no-daemon
@@ -106,13 +108,14 @@ response_field() {
 wait_for_embedding() {
   local document_id="$1"
   local expected_version="$2"
+  local owner_id="${3:-opensql-smoke-owner}"
   local response
   local attempt
 
   for ((attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++)); do
     response="$(
       curl --fail-with-body --silent --show-error \
-        "${BASE_URL}/api/documents/${document_id}/ingestion?ownerId=opensql-smoke-owner"
+        "${BASE_URL}/api/documents/${document_id}/ingestion?ownerId=${owner_id}"
     )"
     printf 'ingestion status: %s\n' "${response}"
 
@@ -125,6 +128,32 @@ wait_for_embedding() {
   done
 
   echo "Embedding did not finish for document=${document_id}, version=${expected_version}" >&2
+  exit 1
+}
+
+wait_for_failure() {
+  local document_id="$1"
+  local expected_version="$2"
+  local owner_id="${3:-opensql-smoke-owner}"
+  local response
+  local attempt
+
+  for ((attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++)); do
+    response="$(
+      curl --fail-with-body --silent --show-error \
+        "${BASE_URL}/api/documents/${document_id}/ingestion?ownerId=${owner_id}"
+    )"
+    printf 'ingestion status: %s\n' "${response}"
+
+    if [[ "${response}" == *"\"version\":${expected_version}"* \
+      && "${response}" == *'"documentStatus":"FAILED"'* \
+      && "${response}" == *'"taskStatus":"FAILED"'* ]]; then
+      return
+    fi
+    sleep "${POLL_INTERVAL_SECONDS}"
+  done
+
+  echo "Embedding did not fail for document=${document_id}, version=${expected_version}" >&2
   exit 1
 }
 
@@ -198,6 +227,97 @@ api_smoke() {
   echo "After '$0 stop', find this document's ingestion_tasks.id and set it as task_id in scripts/sql/00, 03, 04, and 05."
 }
 
+failure_api_smoke() {
+  if ! is_running; then
+    echo "Run '$0 start' before '$0 failure-api'." >&2
+    exit 1
+  fi
+  wait_for_api
+
+  local run_id
+  run_id="$(date +%Y%m%d%H%M%S)"
+  local idempotency_key="opensql-failure-smoke-${run_id}"
+  local owner_id="opensql-failure-smoke-owner-${run_id}"
+  local v1_content="이 문서는 실패 중에도 계속 검색되는 안정 버전입니다."
+  local v2_content="[[OPENSQL_SMOKE_FAIL]] 수동 재처리 뒤 검색으로 전환되는 새 버전입니다."
+  local upload_response
+  local document_id
+  local update_response
+  local document_response
+  local search_response
+  local retry_response
+
+  upload_response="$(
+    curl --fail-with-body --silent --show-error \
+      -X POST "${BASE_URL}/api/documents" \
+      -H 'Content-Type: application/json' \
+      --data "{\"idempotencyKey\":\"${idempotency_key}\",\"title\":\"OpenSQL failure smoke ${run_id}\",\"content\":\"${v1_content}\",\"ownerId\":\"${owner_id}\",\"category\":\"opensql-smoke\"}"
+  )"
+  document_id="$(response_field "${upload_response}" documentId)"
+  if [[ -z "${document_id}" ]]; then
+    echo "Could not read documentId from upload response: ${upload_response}" >&2
+    exit 1
+  fi
+  printf 'v1 upload response: %s\n' "${upload_response}"
+  wait_for_embedding "${document_id}" 1 "${owner_id}"
+
+  update_response="$(
+    curl --fail-with-body --silent --show-error \
+      -X PUT "${BASE_URL}/api/documents/${document_id}" \
+      -H 'Content-Type: application/json' \
+      --data "{\"ownerId\":\"${owner_id}\",\"expectedVersion\":1,\"title\":\"OpenSQL failure smoke ${run_id} v2\",\"content\":\"${v2_content}\",\"category\":\"opensql-smoke\"}"
+  )"
+  printf 'v2 update response: %s\n' "${update_response}"
+  wait_for_failure "${document_id}" 2 "${owner_id}"
+
+  document_response="$(
+    curl --fail-with-body --silent --show-error \
+      "${BASE_URL}/api/documents/${document_id}?ownerId=${owner_id}"
+  )"
+  printf 'failed document state: %s\n' "${document_response}"
+  if [[ "${document_response}" != *'"currentSearchVersion":1'* ]]; then
+    echo "Failed v2 unexpectedly replaced currentSearchVersion: ${document_response}" >&2
+    exit 1
+  fi
+
+  search_response="$(
+    curl --fail-with-body --silent --show-error --get "${BASE_URL}/api/search" \
+      --data-urlencode 'query=OpenSQL 실패 복구' \
+      --data-urlencode "ownerId=${owner_id}" \
+      --data-urlencode 'category=opensql-smoke' \
+      --data-urlencode 'limit=5'
+  )"
+  printf 'search while v2 failed: %s\n' "${search_response}"
+  if [[ "${search_response}" != *"${v1_content}"* || "${search_response}" == *"${v2_content}"* ]]; then
+    echo "Search did not retain only v1 while v2 failed." >&2
+    exit 1
+  fi
+
+  retry_response="$(
+    curl --fail-with-body --silent --show-error \
+      -X POST "${BASE_URL}/api/documents/${document_id}/ingestion/retry" \
+      -H 'Content-Type: application/json' \
+      --data "{\"ownerId\":\"${owner_id}\",\"expectedVersion\":2}"
+  )"
+  printf 'manual retry response: %s\n' "${retry_response}"
+  wait_for_embedding "${document_id}" 2 "${owner_id}"
+
+  search_response="$(
+    curl --fail-with-body --silent --show-error --get "${BASE_URL}/api/search" \
+      --data-urlencode 'query=OpenSQL 실패 복구' \
+      --data-urlencode "ownerId=${owner_id}" \
+      --data-urlencode 'category=opensql-smoke' \
+      --data-urlencode 'limit=5'
+  )"
+  printf 'search after manual retry: %s\n' "${search_response}"
+  if [[ "${search_response}" != *"${v2_content}"* || "${search_response}" == *"${v1_content}"* ]]; then
+    echo "Search did not switch to v2 after manual retry." >&2
+    exit 1
+  fi
+
+  echo "Failure recovery smoke succeeded. documentId=${document_id} runId=${run_id}"
+}
+
 stop() {
   if ! is_running; then
     rm -f "${PID_FILE}"
@@ -225,6 +345,7 @@ case "${1:-}" in
   start) start ;;
   status) status ;;
   api) api_smoke ;;
+  failure-api) failure_api_smoke ;;
   stop) stop ;;
   *) usage; exit 1 ;;
 esac

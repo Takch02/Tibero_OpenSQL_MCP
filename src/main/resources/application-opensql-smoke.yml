@@ -1,0 +1,13 @@
+app:
+  embedding:
+    chaos:
+      # 이 문구가 들어간 청크만 첫 세 번 실패한다. 기본·CI 프로필에는 이 주입기가 존재하지 않는다.
+      failure-marker: "[[OPENSQL_SMOKE_FAIL]]"
+      fail-first-batches: ${OPENSQL_SMOKE_FAIL_FIRST_BATCHES:3}
+    worker:
+      # 영상·실환경 smoke의 재시도 결과를 빠르게 확인하기 위한 프로필 전용 설정이다.
+      poll-interval-ms: 500
+      initial-delay-ms: 0
+      retry:
+        initial-backoff-ms: 100
+        max-backoff-ms: 500

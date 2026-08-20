@@ -1,5 +1,6 @@
 package com.test_mcp.tibero_mcp.ingestion;
 
+import com.test_mcp.tibero_mcp.chaos.EmbeddingFailureInjector;
 import com.test_mcp.tibero_mcp.embedding.EmbeddingService;
 import com.test_mcp.tibero_mcp.ingestion.entity.DocumentChunk;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
@@ -21,6 +22,7 @@ public class EmbeddingWorker {
 
   private final DocumentChunkRepository documentChunkRepository;
   private final EmbeddingService embeddingService;
+  private final EmbeddingFailureInjector embeddingFailureInjector;
   private final EmbeddingResultWriter embeddingResultWriter;
   private final IngestionTaskClaimer ingestionTaskClaimer;
 
@@ -88,6 +90,9 @@ public class EmbeddingWorker {
       }
       int end = Math.min(start + embedBatchSize, chunks.size());
       List<DocumentChunk> batch = chunks.subList(start, end);
+      // opensql-smoke 프로필에서만 실제 handleFailure 경로를 확인하기 위해 모델 호출 직전에 실패를 주입한다.
+      embeddingFailureInjector.beforeEmbedding(
+          batch.stream().map(DocumentChunk::getContent).toList());
       List<float[]> vectors =
           embeddingService.embedAll(batch.stream().map(DocumentChunk::getContent).toList());
       List<Long> chunkIds = batch.stream().map(DocumentChunk::getId).toList();
