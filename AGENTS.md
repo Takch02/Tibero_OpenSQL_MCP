@@ -21,7 +21,7 @@ Tibero MCP: OpenSQL(pgvector) 기반 AI 문서 관리 플랫폼. 배경은 [CLAU
 2. Entity를 API로 직접 노출 금지 → DTO 사용.
 3. Controller는 springdoc-openapi(`@Tag`/`@Operation`/`@ApiResponse`)로 문서화.
 4. Service public 메서드 변경 시 테스트 동반 (DB 테스트는 Testcontainers).
-5. 완료 전 `rtk gradlew clean build --no-daemon`와 `rtk gradlew cleanTest test --no-daemon`를 실행하고 결과를 보고한다. RTK가 없거나 출력·종료 결과를 신뢰할 수 없으면 같은 명령을 원문 Gradle로 재실행하고 사유를 기록한다.
+5. 완료 전 `rtk gradlew clean build --no-daemon`와 `rtk gradlew cleanTest test --no-daemon`를 **순차로** 실행하고 결과를 보고한다. RTK가 반환돼도 Gradle 자식 프로세스가 남아 있을 수 있으므로, `BUILD SUCCESSFUL`/`BUILD FAILED` 또는 테스트 리포트로 종료를 확인한 뒤에만 다음 Gradle 명령을 실행한다. RTK가 없거나 출력·종료 결과를 신뢰할 수 없으면 기존 Gradle 프로세스가 종료된 것을 먼저 확인하고 같은 명령을 원문 Gradle로 재실행하며 사유를 기록한다.
 6. 비밀값·토큰·개인정보를 코드/테스트/로그에 넣지 않음.
 7. 커밋 `<type>: <한국어 설명>`, 이슈/PR 제목 `[FEAT]`/`[FIX]` 등.
 

@@ -8,7 +8,7 @@ PR은 변경 파일 수가 아니라 **독립적으로 이해·검증 가능한 
 2. 기능마다 구현·마이그레이션·그 기능을 검증하는 테스트를 같은 커밋에 둔다.
 3. 별도 기능, README·설계 문서, 포맷 정리는 기능 커밋과 분리한다.
 4. 기존에 있던 사용자 변경이나 이슈 범위 밖 파일은 명시적으로 제외한다.
-5. 모든 커밋은 가능한 한 컴파일 가능해야 하며, PR 전 전체 `rtk gradlew clean build --no-daemon`와 `rtk gradlew cleanTest test --no-daemon`를 실행한다. RTK가 없거나 출력·종료 결과를 확인할 수 없으면 같은 원문 Gradle 명령으로 재실행한다.
+5. 모든 커밋은 가능한 한 컴파일 가능해야 하며, PR 전 전체 `rtk gradlew clean build --no-daemon`와 `rtk gradlew cleanTest test --no-daemon`를 순차 실행한다. 각 명령의 Gradle 프로세스 종료와 결과를 확인한 뒤 다음 명령을 실행한다. RTK가 없거나 출력·종료 결과를 확인할 수 없으면, 실행 중인 Gradle이 없는지 확인한 뒤 같은 원문 Gradle 명령을 단독으로 재실행한다. 상세 절차는 [workflow.md](./workflow.md#rtk-출력-필터)를 따른다.
 
 ## 스테이징 점검 순서
 

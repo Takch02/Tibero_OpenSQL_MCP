@@ -42,7 +42,8 @@ public class IngestionTask {
   @Column(name = "attempt_count", nullable = false)
   private int attemptCount;
 
-  @Column(name = "next_attempt_at", nullable = false)
+  // 새 작업은 DB DEFAULT CURRENT_TIMESTAMP를 사용해 claim SQL의 DB 시각과 같은 기준으로 due를 판단한다.
+  @Column(name = "next_attempt_at", nullable = false, insertable = false)
   private Instant nextAttemptAt;
 
   @Column(name = "last_error")
@@ -62,7 +63,6 @@ public class IngestionTask {
     this.documentVersion = documentVersion;
     this.status = IngestionTaskStatus.PENDING;
     this.createdAt = Instant.now();
-    this.nextAttemptAt = this.createdAt;
   }
 
   // claim과 lease 기록을 함께 남겨, 다른 인스턴스가 같은 작업을 처리하지 못하게 한다.

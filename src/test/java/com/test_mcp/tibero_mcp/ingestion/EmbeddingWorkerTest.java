@@ -3,6 +3,7 @@ package com.test_mcp.tibero_mcp.ingestion;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
+import com.test_mcp.tibero_mcp.chaos.EmbeddingFailureInjector;
 import com.test_mcp.tibero_mcp.embedding.EmbeddingService;
 import com.test_mcp.tibero_mcp.exception.IngestionTaskNotFoundException;
 import com.test_mcp.tibero_mcp.ingestion.repository.DocumentChunkRepository;
@@ -16,13 +17,18 @@ class EmbeddingWorkerTest {
       org.mockito.Mockito.mock(DocumentChunkRepository.class);
   private final EmbeddingService embeddingService =
       org.mockito.Mockito.mock(EmbeddingService.class);
+  private final EmbeddingFailureInjector embeddingFailureInjector = contents -> {};
   private final EmbeddingResultWriter embeddingResultWriter =
       org.mockito.Mockito.mock(EmbeddingResultWriter.class);
   private final IngestionTaskClaimer ingestionTaskClaimer =
       org.mockito.Mockito.mock(IngestionTaskClaimer.class);
   private final EmbeddingWorker embeddingWorker =
       new EmbeddingWorker(
-          documentChunkRepository, embeddingService, embeddingResultWriter, ingestionTaskClaimer);
+          documentChunkRepository,
+          embeddingService,
+          embeddingFailureInjector,
+          embeddingResultWriter,
+          ingestionTaskClaimer);
 
   @Test
   void 첫_작업의_lease_갱신이_실패해도_다음_claim_작업을_처리한다() {
