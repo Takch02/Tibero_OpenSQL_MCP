@@ -122,6 +122,26 @@ export SPRING_DATASOURCE_PASSWORD='<password>'
 | 과거 버전으로 복원 | `POST` | `/api/documents/{documentId}/versions/{version}/restore` |
 | 의미 검색 | `GET` | `/api/search?query=&ownerId=&category=&limit=` |
 
+### MCP 검색 도구
+
+Streamable HTTP MCP 엔드포인트는 `/mcp`이며, `search_documents` 도구를 제공한다. 도구는 REST 검색과
+동일하게 `query`, `ownerId`, 선택 `category`, `limit`을 받는다. 결과에는 문서 ID, 현재 문서 제목·카테고리,
+실제로 검색에 사용된 `documentVersion`, 청크 번호, 본문, 유사도 점수가 포함된다. 따라서 에이전트는 답변에
+사용한 문서와 검색 버전을 함께 제시할 수 있다.
+
+로컬 Codex 검증은 애플리케이션을 Mac에서 실행한 뒤 `~/.codex/config.toml`에 아래처럼 등록한다. DB는 UTM
+OpenSQL에 연결해도 되지만, MCP 주소는 Codex가 실행 중인 Mac의 localhost를 사용한다.
+
+```toml
+[mcp_servers.tibero_local]
+url = "http://127.0.0.1:8080/mcp"
+enabled_tools = ["search_documents"]
+default_tools_approval_mode = "prompt"
+```
+
+등록 후 Codex를 재시작하고, 새 task에서 `search_documents` 도구로 ownerId 범위의 검색을 요청한다. 현재
+`ownerId`는 1차 평가용 검색 범위이며, 외부 공개 전 JWT 기반 인증·권한 검증으로 교체한다.
+
 문서 업로드 예시:
 
 ```bash
