@@ -17,6 +17,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
@@ -60,6 +61,8 @@ class EmbeddingWorkerBatchingIntegrationTest {
   @Autowired DocumentRepository documentRepository;
 
   @Autowired DocumentChunkRepository documentChunkRepository;
+
+  @Autowired JdbcTemplate jdbcTemplate;
 
   @Test
   void 청크가_많은_문서는_embed_batch_size_단위로_나눠_추론한다() {
@@ -120,6 +123,16 @@ class EmbeddingWorkerBatchingIntegrationTest {
             .toList();
     assertThat(afterFailureChunks).hasSize(5);
     assertThat(afterFailureChunks).filteredOn(chunk -> chunk.getEmbedding() != null).hasSize(2);
+
+    // 0ms backoff도 애플리케이션/DB 시각의 미세한 차이에는 다음 poll에서 아직 due가 아닐 수 있다.
+    // 상태를 건드리지 않고 DB 현재 시각보다 과거로 고정해 재시도 claim 조건만 결정적으로 만족시킨다.
+    jdbcTemplate.update(
+        """
+        UPDATE ingestion_tasks
+        SET next_attempt_at = CURRENT_TIMESTAMP - INTERVAL '1 millisecond'
+        WHERE document_id = ? AND document_version = 2
+        """,
+        updated.getId());
 
     embeddingWorker.pollAndProcess();
 
