@@ -140,7 +140,9 @@ default_tools_approval_mode = "prompt"
 ```
 
 등록 후 Codex를 재시작하고, 새 task에서 `search_documents` 도구로 ownerId 범위의 검색을 요청한다. 현재
-`ownerId`는 1차 평가용 검색 범위이며, 외부 공개 전 JWT 기반 인증·권한 검증으로 교체한다.
+`ownerId`는 1차 평가용 검색 범위이며 인증된 사용자 정보가 아니다. 따라서 현재 REST API와 MCP 엔드포인트는
+로컬 데모 또는 신뢰 가능한 내부 네트워크에서만 실행한다. 외부 공개 전에는 JWT의 인증 principal로 소유 범위를
+결정하고 권한을 검증하도록 교체한다.
 
 문서 업로드 예시:
 
