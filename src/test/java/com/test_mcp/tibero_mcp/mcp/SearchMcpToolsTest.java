@@ -48,4 +48,13 @@ class SearchMcpToolsTest {
 
     verifyNoInteractions(searchService);
   }
+
+  @Test
+  void ownerId가_비어있으면_검색을_호출하지_않는다() {
+    assertThatThrownBy(() -> searchMcpTools.searchDocuments("관리자 보안", " ", null, 5))
+        .isInstanceOf(InvalidRequestException.class)
+        .hasMessage("query/ownerId는 필수입니다.");
+
+    verifyNoInteractions(searchService);
+  }
 }

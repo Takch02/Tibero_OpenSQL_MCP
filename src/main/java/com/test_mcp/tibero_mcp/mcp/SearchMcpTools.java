@@ -21,11 +21,10 @@ public class SearchMcpTools {
   @Tool(
       name = "search_documents",
       description =
-          "업로드된 문서에서 질의와 의미적으로 유사한 청크를 검색한다. ownerId가 소유한 문서만 검색되며(권한 필터),"
-              + " category로 결과를 좁힐 수 있다.")
+          "업로드된 문서에서 질의와 의미적으로 유사한 청크를 검색한다. ownerId 범위의 문서만 검색되며," + " category로 결과를 좁힐 수 있다.")
   public List<SearchResultResponse> searchDocuments(
       @ToolParam(description = "검색 질의") String query,
-      @ToolParam(description = "검색을 요청하는 사용자 ID. 이 사용자가 소유한 문서만 검색된다.") String ownerId,
+      @ToolParam(description = "1차 평가용 문서 소유 범위 식별자") String ownerId,
       @ToolParam(description = "카테고리 필터(선택)", required = false) String category,
       @ToolParam(description = "반환할 최대 청크 수") int limit) {
     if (!StringUtils.hasText(query) || !StringUtils.hasText(ownerId)) {
