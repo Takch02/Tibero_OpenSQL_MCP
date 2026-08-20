@@ -5,7 +5,11 @@ public interface ChunkSearchProjection {
 
   Long getDocumentId();
 
+  String getDocumentTitle();
+
   Integer getDocumentVersion();
+
+  String getCategory();
 
   Integer getChunkIndex();
 
