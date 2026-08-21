@@ -20,7 +20,7 @@ public class SearchService {
   @Transactional(readOnly = true)
   public List<ChunkSearchProjection> searchSimilar(
       String query, String ownerId, String category, int limit) {
-    float[] queryEmbedding = embeddingService.embed(query);
+    float[] queryEmbedding = embeddingService.embedQuery(query);
     return documentChunkRepository.searchByOwnerAndCategory(
         embeddingService.toVectorLiteral(queryEmbedding), ownerId, category, limit);
   }

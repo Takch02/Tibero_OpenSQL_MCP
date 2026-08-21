@@ -73,7 +73,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
         documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(uploaded.getId());
     assertThat(chunks).hasSize(5);
 
-    given(embeddingService.embedAll(anyList()))
+    given(embeddingService.embedDocuments(anyList()))
         .willAnswer(
             invocation -> {
               List<?> input = invocation.getArgument(0);
@@ -85,7 +85,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
     embeddingWorker.pollAndProcess();
 
     // then: 5개 청크가 batch-size=2로 3번(2+2+1) 호출됨
-    verify(embeddingService, times(3)).embedAll(anyList());
+    verify(embeddingService, times(3)).embedDocuments(anyList());
 
     Document reloaded = documentRepository.findById(uploaded.getId()).orElseThrow();
     assertThat(reloaded.getStatus()).isEqualTo(DocumentStatus.EMBEDDED);
@@ -96,7 +96,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
     Document uploaded = ingestionService.upload("partial-key", "정책", "v1 내용", "user-1", null);
     java.util.concurrent.atomic.AtomicInteger invocationCount =
         new java.util.concurrent.atomic.AtomicInteger();
-    given(embeddingService.embedAll(anyList()))
+    given(embeddingService.embedDocuments(anyList()))
         .willAnswer(
             invocation -> {
               int invocationNumber = invocationCount.incrementAndGet();
@@ -144,7 +144,7 @@ class EmbeddingWorkerBatchingIntegrationTest {
             .filter(chunk -> chunk.getDocumentVersion().equals(2))
             .toList();
     assertThat(afterRetryChunks).allSatisfy(chunk -> assertThat(chunk.getEmbedding()).isNotNull());
-    verify(embeddingService, times(5)).embedAll(anyList());
+    verify(embeddingService, times(5)).embedDocuments(anyList());
   }
 
   private static float[] vector() {

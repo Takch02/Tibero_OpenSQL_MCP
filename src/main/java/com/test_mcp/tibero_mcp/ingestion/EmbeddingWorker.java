@@ -94,7 +94,7 @@ public class EmbeddingWorker {
       embeddingFailureInjector.beforeEmbedding(
           batch.stream().map(DocumentChunk::getContent).toList());
       List<float[]> vectors =
-          embeddingService.embedAll(batch.stream().map(DocumentChunk::getContent).toList());
+          embeddingService.embedDocuments(batch.stream().map(DocumentChunk::getContent).toList());
       List<Long> chunkIds = batch.stream().map(DocumentChunk::getId).toList();
       List<String> vectorLiterals =
           vectors.stream().map(embeddingService::toVectorLiteral).toList();

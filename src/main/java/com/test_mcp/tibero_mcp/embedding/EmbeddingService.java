@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 public class EmbeddingService {
 
   private final EmbeddingModel embeddingModel;
+  private final EmbeddingPrefixProperties embeddingPrefixProperties;
 
   @Value("${app.embedding.dimension}")
   private int dimension;
@@ -21,6 +22,17 @@ public class EmbeddingService {
     float[] vector = embeddingModel.embed(text);
     verifyDimension(vector);
     return vector;
+  }
+
+  // 여러 문서 청크를 한 번에 배치 추론한다. 접두사는 배치의 모든 청크에 동일하게 적용한다.
+  public List<float[]> embedDocuments(List<String> contents) {
+    return embedAll(
+        contents.stream().map(content -> embeddingPrefixProperties.document() + content).toList());
+  }
+
+  // 검색 질의는 모델이 요구하는 질의 역할 접두사를 붙여 임베딩한다.
+  public float[] embedQuery(String query) {
+    return embed(embeddingPrefixProperties.query() + query);
   }
 
   // 여러 텍스트를 한 번에 배치 추론한다. 하나씩 N번 추론하는 것보다 훨씬 효율적이라

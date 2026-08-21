@@ -69,7 +69,7 @@ class EmbeddingWorkerFailureIntegrationTest {
   void 임베딩_추론이_실패하면_backoff_후_PENDING으로_재예약하고_최대_횟수에서_FAILED로_전이한다() {
     // given: 업로드는 정상(추론 없음)
     Document uploaded = ingestionService.upload("fail-key", "제목", "실패할 내용", "user-1", null);
-    given(embeddingService.embedAll(anyList())).willThrow(new RuntimeException("모델 추론 오류"));
+    given(embeddingService.embedDocuments(anyList())).willThrow(new RuntimeException("모델 추론 오류"));
 
     // when: 첫 번째 실패는 재시도 대상으로 남긴다.
     Instant beforeFirstFailure = Instant.now();
