@@ -37,6 +37,14 @@ class EmbeddingServiceTest {
   }
 
   @Test
+  void 접두사_설정이_없으면_빈_문자열로_정규화한다() {
+    EmbeddingPrefixProperties prefixes = new EmbeddingPrefixProperties(null, null);
+
+    assertThat(prefixes.document()).isEmpty();
+    assertThat(prefixes.query()).isEmpty();
+  }
+
+  @Test
   void 문서_배치에는_문서_접두사를_붙여_추론한다() {
     given(embeddingModel.embed(List.of("passage: 관리자 계정 정책")))
         .willReturn(List.of(new float[] {0.1f, 0.2f, 0.3f}));
