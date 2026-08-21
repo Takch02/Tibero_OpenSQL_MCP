@@ -75,7 +75,7 @@ v2 수정: PENDING, current_search_version = 1 유지
 - Java 21, Spring Boot 4.1, Gradle
 - Tmax OpenSQL / PostgreSQL 17, pgvector
 - Spring Data JPA, JDBC batch, Flyway
-- Spring AI Transformers, 로컬 ONNX `all-MiniLM-L6-v2` 임베딩 모델 (384차원)
+- Spring AI Transformers, 로컬 ONNX `multilingual-e5-small` 임베딩 모델 (384차원, 문서 `passage:`·질의 `query:` 역할 구분)
 - Spring AI MCP Server (Streamable HTTP)
 - Testcontainers, Spotless, springdoc-openapi
 

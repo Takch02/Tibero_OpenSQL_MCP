@@ -97,13 +97,13 @@ class OpenSqlSmokeFailureRecoveryIntegrationTest {
     jdbcTemplate.update("DELETE FROM document_versions");
     jdbcTemplate.update("DELETE FROM documents");
 
-    given(embeddingService.embedAll(anyList()))
+    given(embeddingService.embedDocuments(anyList()))
         .willAnswer(
             invocation -> {
               List<String> contents = invocation.getArgument(0);
               return contents.stream().map(ignored -> vector()).toList();
             });
-    given(embeddingService.embed(any(String.class))).willReturn(vector());
+    given(embeddingService.embedQuery(any(String.class))).willReturn(vector());
     given(embeddingService.toVectorLiteral(any(float[].class))).willReturn(vectorLiteral());
   }
 
@@ -142,7 +142,7 @@ class OpenSqlSmokeFailureRecoveryIntegrationTest {
                     updated.getId(), 2))
         .isNotEmpty();
     assertThat(searchContents()).contains(V1_CONTENT).doesNotContain(V2_CONTENT);
-    verify(embeddingService, times(1)).embedAll(anyList());
+    verify(embeddingService, times(1)).embedDocuments(anyList());
 
     mockMvc
         .perform(
@@ -169,7 +169,7 @@ class OpenSqlSmokeFailureRecoveryIntegrationTest {
     assertThat(ingestionLogRepository.findByDocumentId(updated.getId()))
         .extracting(IngestionLog::getEvent)
         .contains(IngestionEvent.FAILED, IngestionEvent.MANUAL_RETRY, IngestionEvent.EMBEDDED);
-    verify(embeddingService, times(2)).embedAll(anyList());
+    verify(embeddingService, times(2)).embedDocuments(anyList());
   }
 
   private Document reload(Document document) {

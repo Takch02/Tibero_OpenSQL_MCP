@@ -61,8 +61,8 @@ class SearchServiceIntegrationTest {
     Document otherCategory =
         ingestionService.upload("key-3", "엔진", "Car engines convert fuel.", "user-1", "vehicle");
 
-    given(embeddingService.embed(anyString())).willReturn(fixedVector());
-    given(embeddingService.embedAll(anyList()))
+    given(embeddingService.embedQuery(anyString())).willReturn(fixedVector());
+    given(embeddingService.embedDocuments(anyList()))
         .willAnswer(
             invocation -> {
               List<?> input = invocation.getArgument(0);
@@ -110,8 +110,8 @@ class SearchServiceIntegrationTest {
     Document document =
         ingestionService.upload(
             "key-version", "초기 보안 정책", "관리자 계정은 MFA를 사용합니다.", "version-user", "security");
-    given(embeddingService.embed(anyString())).willReturn(fixedVector());
-    given(embeddingService.embedAll(anyList()))
+    given(embeddingService.embedQuery(anyString())).willReturn(fixedVector());
+    given(embeddingService.embedDocuments(anyList()))
         .willAnswer(
             invocation -> {
               List<?> input = invocation.getArgument(0);

@@ -18,12 +18,15 @@ spring:
   ai:
     embedding:
       transformer:
+        # 모델은 저장소가 아닌 사용자 로컬 캐시에 보관해 재시작 시 재다운로드를 피한다.
+        cache:
+          directory: ${APP_EMBEDDING_MODEL_CACHE_DIRECTORY:${user.home}/.cache/tibero-mcp/embedding-models}
         onnx:
-          # all-MiniLM-L6-v2 (384차원) — spring-ai v2.0.0 태그에 고정, 라이브러리 기본값과 동일 모델
-          model-uri: https://media.githubusercontent.com/media/spring-projects/spring-ai/refs/tags/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/model.onnx
+          # multilingual-e5-small: 로컬 ONNX 추론, 한국어를 포함한 다국어 검색용, 384차원
+          model-uri: https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/model.onnx
           model-output-name: last_hidden_state
         tokenizer:
-          uri: https://raw.githubusercontent.com/spring-projects/spring-ai/v2.0.0/models/spring-ai-transformers/src/main/resources/onnx/all-MiniLM-L6-v2/tokenizer.json
+          uri: https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/tokenizer.json
     mcp:
       server:
         name: tibero-mcp
@@ -39,6 +42,10 @@ app:
     max-pdf-pages: 1000
   embedding:
     dimension: 384
+    # E5는 검색 역할을 구분하기 위해 문서와 질의에 각각 passage:/query: 접두사를 요구한다.
+    prefix:
+      document: "passage: "
+      query: "query: "
     worker:
       # PENDING 문서를 폴링하는 주기(ms)와 한 번에 집어갈 문서 수(Outbox 소비자)
       poll-interval-ms: 5000
